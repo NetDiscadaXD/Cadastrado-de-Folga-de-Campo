@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
-import { Colaborador, ASO, Treinamento, Viagem, BloqueioCracha, Memorando, Espelho, Holerite, Sindicato } from "./src/types";
+import { Colaborador, ASO, Treinamento, Viagem, BloqueioCracha, Memorando, Espelho, Holerite, Sindicato, Ferias } from "./src/types";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, getDoc } from "firebase/firestore";
 
@@ -32,6 +32,7 @@ interface DatabaseSchema {
   espelhos: Espelho[];
   holerites: Holerite[];
   sindicatos: Sindicato[];
+  ferias: Ferias[];
 }
 
 const DEFAULT_DB: DatabaseSchema = {
@@ -184,7 +185,8 @@ const DEFAULT_DB: DatabaseSchema = {
   memorandos: [],
   espelhos: [],
   holerites: [],
-  sindicatos: []
+  sindicatos: [],
+  ferias: []
 };
 
 // Cache em memória para acesso síncrono ultra-rápido nas rotas Express
@@ -224,7 +226,8 @@ async function seedDefaultData(db: DatabaseSchema) {
       { name: "memorandos", items: db.memorandos || [], keyField: "id" },
       { name: "espelhos", items: db.espelhos || [], keyField: "id" },
       { name: "holerites", items: db.holerites || [], keyField: "id" },
-      { name: "sindicatos", items: db.sindicatos || [], keyField: "id" }
+      { name: "sindicatos", items: db.sindicatos || [], keyField: "id" },
+      { name: "ferias", items: db.ferias || [], keyField: "id" }
     ];
 
     for (const col of collections) {
@@ -251,7 +254,8 @@ export async function syncFromFirestore(): Promise<DatabaseSchema> {
     memorandos: [],
     espelhos: [],
     holerites: [],
-    sindicatos: []
+    sindicatos: [],
+    ferias: []
   };
 
   let localBackup: any = null;
@@ -273,7 +277,8 @@ export async function syncFromFirestore(): Promise<DatabaseSchema> {
       { name: "memorandos", keyField: "id" },
       { name: "espelhos", keyField: "id" },
       { name: "holerites", keyField: "id" },
-      { name: "sindicatos", keyField: "id" }
+      { name: "sindicatos", keyField: "id" },
+      { name: "ferias", keyField: "id" }
     ];
 
     let hasAnyData = false;
@@ -361,7 +366,8 @@ async function syncChangesToFirestore(oldDb: DatabaseSchema, newDb: DatabaseSche
     { name: "memorandos", keyField: "id" },
     { name: "espelhos", keyField: "id" },
     { name: "holerites", keyField: "id" },
-    { name: "sindicatos", keyField: "id" }
+    { name: "sindicatos", keyField: "id" },
+    { name: "ferias", keyField: "id" }
   ];
 
   for (const col of collectionsToSync) {
@@ -439,7 +445,7 @@ function writeDB(data: DatabaseSchema) {
 app.get("/api/diagnostico-firestore", async (req, res) => {
   try {
     const collectionsToVerify = [
-      "colaboradores", "asos", "treinamentos", "viagens", "bloqueios", "memorandos", "espelhos", "holerites", "sindicatos"
+      "colaboradores", "asos", "treinamentos", "viagens", "bloqueios", "memorandos", "espelhos", "holerites", "sindicatos", "ferias"
     ];
     const resultsCustom: any = {};
     const resultsDefault: any = {};
@@ -954,6 +960,44 @@ app.delete("/api/sindicatos/:id", (req, res) => {
   const db = loadDB();
   const { id } = req.params;
   db.sindicatos = (db.sindicatos || []).filter(s => s.id !== id);
+  writeDB(db);
+  res.json({ success: true });
+});
+
+// Férias (período aquisitivo + rateio de custo entre projeto de origem e atual)
+app.get("/api/ferias", (req, res) => {
+  const db = loadDB();
+  res.json(db.ferias || []);
+});
+
+app.post("/api/ferias", (req, res) => {
+  const db = loadDB();
+  const novo: Ferias = req.body;
+  if (!novo.matricula || !novo.paInicio || !novo.paFim || !novo.feriasInicio || !novo.feriasFim) {
+    return res.status(400).json({ error: "Matrícula, período aquisitivo e período de férias são obrigatórios." });
+  }
+  if (novo.feriasFim < novo.feriasInicio) {
+    return res.status(400).json({ error: "O fim das férias não pode ser anterior ao início." });
+  }
+  novo.id = novo.id || "FER-" + Date.now();
+  novo.dataCriacao = novo.dataCriacao || new Date().toISOString().split("T")[0];
+
+  db.ferias = db.ferias || [];
+  const idx = db.ferias.findIndex(f => f.id === novo.id);
+  if (idx >= 0) {
+    db.ferias[idx] = novo; // edição de lançamento existente
+  } else {
+    db.ferias.push(novo);
+  }
+
+  writeDB(db);
+  res.json(novo);
+});
+
+app.delete("/api/ferias/:id", (req, res) => {
+  const db = loadDB();
+  const { id } = req.params;
+  db.ferias = (db.ferias || []).filter(f => f.id !== id);
   writeDB(db);
   res.json({ success: true });
 });

@@ -1,4 +1,4 @@
-import { Colaborador, ASO, Treinamento, Viagem, BloqueioCracha, Memorando, Espelho, Holerite, Sindicato } from "./types";
+import { Colaborador, ASO, Treinamento, Viagem, BloqueioCracha, Memorando, Espelho, Holerite, Sindicato, Ferias } from "./types";
 
 // Base API URL is relative since the server hosts both the front-end and back-end
 const API_BASE = "";
@@ -244,7 +244,8 @@ export function syncLocalStorage(
   memorandos: Memorando[] = [],
   espelhos: Espelho[] = [],
   holerites: Holerite[] = [],
-  sindicatos: Sindicato[] = []
+  sindicatos: Sindicato[] = [],
+  ferias: Ferias[] = []
 ) {
   localStorage.setItem("erp_colaboradores", JSON.stringify(colaboradores));
   localStorage.setItem("erp_asos", JSON.stringify(asos));
@@ -255,6 +256,7 @@ export function syncLocalStorage(
   localStorage.setItem("erp_espelhos", JSON.stringify(espelhos));
   localStorage.setItem("erp_holerites", JSON.stringify(holerites));
   localStorage.setItem("erp_sindicatos", JSON.stringify(sindicatos));
+  localStorage.setItem("erp_ferias", JSON.stringify(ferias));
 }
 
 export async function fetchEspelhos(): Promise<Espelho[]> {
@@ -352,6 +354,39 @@ export async function deleteSindicato(id: string): Promise<boolean> {
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.error || "Erro ao excluir cadastro do sindicato");
+  }
+  return true;
+}
+
+export async function fetchFerias(): Promise<Ferias[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/ferias`);
+    if (!res.ok) throw new Error("Erro ao buscar férias");
+    return await res.json();
+  } catch (err) {
+    const local = localStorage.getItem("erp_ferias");
+    return local ? JSON.parse(local) : [];
+  }
+}
+
+export async function saveFerias(ferias: Ferias): Promise<Ferias> {
+  const res = await fetch(`${API_BASE}/api/ferias`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(ferias),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Erro ao salvar férias");
+  }
+  return await res.json();
+}
+
+export async function deleteFerias(id: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/api/ferias/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Erro ao excluir férias");
   }
   return true;
 }

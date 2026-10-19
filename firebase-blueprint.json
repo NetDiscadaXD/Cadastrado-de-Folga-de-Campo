@@ -19,7 +19,9 @@
         "projetoAtual": { "type": "string", "description": "Nome do projeto atual" },
         "fotoUrl": { "type": "string", "description": "Foto opcional do colaborador" },
         "status": { "type": "string", "enum": ["Ativo", "Inativo"] },
-        "dataInativacao": { "type": "string", "description": "Data de inativação no formato YYYY-MM-DD" }
+        "dataInativacao": { "type": "string", "description": "Data de inativação no formato YYYY-MM-DD" },
+        "projetoOrigem": { "type": "string", "description": "Projeto de onde o colaborador foi transferido" },
+        "salarioBase": { "type": "number", "description": "Valor bruto mensal (R$) já com encargos inclusos" }
       },
       "required": ["matricula", "nomeCompleto", "funcao", "dataAdmissao", "cpf", "tipoMaoDeObra", "cidade", "estado", "regimeTrabalho", "dataInicioProjeto", "transferido", "projetoAtual"]
     },
@@ -174,6 +176,29 @@
         "dataUpload": { "type": "string", "description": "Data do upload YYYY-MM-DD" }
       },
       "required": ["id", "matricula", "fileName", "dataUpload"]
+    },
+    "Ferias": {
+      "title": "Ferias",
+      "description": "Férias do colaborador com período aquisitivo e rateio de custo por projeto",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único das férias" },
+        "matricula": { "type": "string", "description": "Matrícula do colaborador" },
+        "paInicio": { "type": "string", "description": "Início do período aquisitivo YYYY-MM-DD" },
+        "paFim": { "type": "string", "description": "Fim do período aquisitivo YYYY-MM-DD" },
+        "feriasInicio": { "type": "string", "description": "Início do gozo YYYY-MM-DD" },
+        "feriasFim": { "type": "string", "description": "Fim do gozo YYYY-MM-DD" },
+        "diasAbono": { "type": "number", "description": "Dias vendidos de abono pecuniário (0 a 10)" },
+        "salarioBase": { "type": "number", "description": "Valor bruto mensal com encargos inclusos (R$)" },
+        "encargosPct": { "type": "number", "description": "Percentual de encargos extras/adicionais" },
+        "incluirTerco": { "type": "boolean", "description": "Se aplica 1/3 constitucional sobre o gozo e abono" },
+        "projetoOrigem": { "type": "string", "description": "Projeto de origem" },
+        "projetoAtual": { "type": "string", "description": "Projeto atual" },
+        "dataInicioCanteiro": { "type": "string", "description": "Data de início no canteiro atual YYYY-MM-DD" },
+        "observacao": { "type": "string", "description": "Observação adicional" },
+        "dataCriacao": { "type": "string", "description": "Data de criação do lançamento YYYY-MM-DD" }
+      },
+      "required": ["id", "matricula", "paInicio", "paFim", "feriasInicio", "feriasFim", "diasAbono", "salarioBase", "encargosPct", "projetoOrigem", "projetoAtual", "dataInicioCanteiro", "dataCriacao"]
     }
   },
   "firestore": {
@@ -212,6 +237,10 @@
     "sindicatos": {
       "schema": "Sindicato",
       "description": "Coleção de termos ou comprovantes de sindicato"
+    },
+    "ferias": {
+      "schema": "Ferias",
+      "description": "Coleção de lançamentos de férias e rateio por projeto"
     }
   }
 }

@@ -28,6 +28,30 @@ export interface Colaborador {
   motivoDesbloqueioCliente?: string; // Motivo de desbloqueio do cliente
   dataTreinamentoAura?: string; // Data de início do treinamento introdutório Aura YYYY-MM-DD
   matriculaAura?: string; // Matrícula Aura (campo preenchido pelo usuário)
+  projetoOrigem?: string; // Projeto de onde o colaborador foi transferido (usado no rateio de férias)
+  salarioBase?: number; // Valor bruto mensal (R$) já com encargos inclusos, usado no cálculo de férias
+}
+
+/**
+ * Férias do colaborador. Guarda apenas os dados informados; o rateio de custo entre
+ * projeto de origem e projeto atual é sempre calculado por src/utils/ferias.ts.
+ */
+export interface Ferias {
+  id: string;
+  matricula: string;
+  paInicio: string; // Início do período aquisitivo YYYY-MM-DD
+  paFim: string; // Fim do período aquisitivo YYYY-MM-DD
+  feriasInicio: string; // Início do gozo YYYY-MM-DD
+  feriasFim: string; // Fim do gozo YYYY-MM-DD
+  diasAbono: number; // Dias vendidos (abono pecuniário), 0 a 10
+  salarioBase: number; // Valor bruto mensal (R$) já com encargos inclusos
+  encargosPct: number; // Percentual de encargos adicionais/extras (padrão 0%, pois o valor já é bruto com encargos)
+  incluirTerco?: boolean; // Se inclui 1/3 constitucional sobre o gozo e abono (padrão true)
+  projetoOrigem: string; // Projeto de origem (snapshot no momento do lançamento)
+  projetoAtual: string; // Projeto atual (snapshot no momento do lançamento)
+  dataInicioCanteiro: string; // Início no canteiro atual YYYY-MM-DD (base do rateio)
+  observacao?: string;
+  dataCriacao: string; // YYYY-MM-DD
 }
 
 export interface ASO {

@@ -18,7 +18,8 @@ import {
   Cloud,
   FolderOpen,
   LogOut,
-  RefreshCw
+  RefreshCw,
+  CalendarDays
 } from "lucide-react";
 
 // Componentes das Abas
@@ -34,9 +35,10 @@ import RelatorioCrachaView from "./components/RelatorioCrachaView";
 import EspelhosView from "./components/EspelhosView";
 import HoleritesView from "./components/HoleritesView";
 import SindicatosView from "./components/SindicatosView";
+import FeriasView from "./components/FeriasView";
 
 // Tipos de dados
-import { Colaborador, ASO, Treinamento, Viagem, BloqueioCracha, Memorando, Espelho, Holerite, Sindicato } from "./types";
+import { Colaborador, ASO, Treinamento, Viagem, BloqueioCracha, Memorando, Espelho, Holerite, Sindicato, Ferias } from "./types";
 
 // Camada de API
 import { 
@@ -49,6 +51,7 @@ import {
   fetchEspelhos, saveEspelho, deleteEspelho,
   fetchHolerites, saveHolerite, deleteHolerite,
   fetchSindicatos, saveSindicato, deleteSindicato,
+  fetchFerias, saveFerias, deleteFerias,
   syncLocalStorage
 } from "./api";
 
@@ -94,7 +97,7 @@ export default function App() {
   };
 
   // Controle de Abas Ativas
-  const [activeTab, setActiveTab] = useState<"dashboard" | "cadastro" | "aso" | "treinamento" | "folga" | "bloqueio" | "cracha" | "memorando" | "relatoriocracha" | "espelhos" | "holerites" | "sindicatos">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "cadastro" | "aso" | "treinamento" | "folga" | "bloqueio" | "cracha" | "memorando" | "relatoriocracha" | "espelhos" | "holerites" | "sindicatos" | "ferias">("dashboard");
 
   // Estados dos Dados Unificados
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([]);
@@ -106,6 +109,7 @@ export default function App() {
   const [espelhos, setEspelhos] = useState<Espelho[]>([]);
   const [holerites, setHolerites] = useState<Holerite[]>([]);
   const [sindicatos, setSindicatos] = useState<Sindicato[]>([]);
+  const [ferias, setFerias] = useState<Ferias[]>([]);
 
   // Estados do Google Drive
   const [googleUser, setGoogleUser] = useState<any>(() => {
@@ -285,7 +289,7 @@ export default function App() {
     setIsLoading(true);
     setSyncStatus("syncing");
     try {
-      const [colsRes, asosRes, treisRes, viagsRes, bloqsRes, memosRes, espelhosRes, holeritesRes, sindicatosRes] = await Promise.all([
+      const [colsRes, asosRes, treisRes, viagsRes, bloqsRes, memosRes, espelhosRes, holeritesRes, sindicatosRes, feriasRes] = await Promise.all([
         fetchColaboradores(),
         fetchASOs(),
         fetchTreinamentos(),
@@ -295,6 +299,7 @@ export default function App() {
         fetchEspelhos(),
         fetchHolerites(),
         fetchSindicatos(),
+        fetchFerias(),
       ]);
 
       setColaboradores(colsRes);
@@ -306,7 +311,8 @@ export default function App() {
       setEspelhos(espelhosRes || []);
       setHolerites(holeritesRes || []);
       setSindicatos(sindicatosRes || []);
-      
+      setFerias(feriasRes || []);
+
       // Sincroniza em cache local para persistência offline / contingente
       syncLocalStorage(
         colsRes, 
@@ -317,7 +323,8 @@ export default function App() {
         memosRes, 
         espelhosRes || [],
         holeritesRes || [],
-        sindicatosRes || []
+        sindicatosRes || [],
+        feriasRes || []
       );
       setSyncStatus("synced");
     } catch (err) {
@@ -621,6 +628,36 @@ export default function App() {
     setSindicatos((prev) => {
       const updated = prev.filter(e => e.id !== id);
       localStorage.setItem("erp_sindicatos", JSON.stringify(updated));
+      return updated;
+    });
+    setSyncStatus("synced");
+  };
+
+  // Handlers - Férias (período aquisitivo e rateio de custo)
+  const handleSaveFerias = async (f: Ferias) => {
+    if (!guardAdmin()) return;
+    setSyncStatus("syncing");
+    try {
+      const result = await saveFerias(f);
+      setFerias((prev) => {
+        const updated = [...prev.filter((x) => x.id !== result.id), result];
+        localStorage.setItem("erp_ferias", JSON.stringify(updated));
+        return updated;
+      });
+      setSyncStatus("synced");
+    } catch (err) {
+      setSyncStatus("error");
+      throw err;
+    }
+  };
+
+  const handleDeleteFerias = async (id: string) => {
+    if (!guardAdmin()) return;
+    setSyncStatus("syncing");
+    await deleteFerias(id);
+    setFerias((prev) => {
+      const updated = prev.filter((x) => x.id !== id);
+      localStorage.setItem("erp_ferias", JSON.stringify(updated));
       return updated;
     });
     setSyncStatus("synced");
@@ -966,6 +1003,19 @@ export default function App() {
             <span>08. Sindicato</span>
             <ShieldAlert className="w-3.5 h-3.5" />
           </button>
+
+          <button
+            id="tab-ferias"
+            onClick={() => setActiveTab("ferias")}
+            className={`w-full text-left px-4 py-2.5 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-between ${
+              activeTab === "ferias"
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/10"
+                : "text-slate-300 hover:bg-slate-800 hover:text-white"
+            }`}
+          >
+            <span>09. Férias</span>
+            <CalendarDays className="w-3.5 h-3.5" />
+          </button>
         </nav>
 
         {/* Informações do Usuário Ativo */}
@@ -1091,6 +1141,7 @@ export default function App() {
               {activeTab === "cracha" && "Mapeador e Emissor de Crachás de Campo"}
               {activeTab === "memorando" && "Controle Operacional e Check-in de Memorandos"}
               {activeTab === "relatoriocracha" && "Relatório de Liberação de Crachás: Corridos e Úteis"}
+              {activeTab === "ferias" && "Férias: Período Aquisitivo e Rateio de Custo por Projeto"}
             </span>
             {currentUser?.role === "admin" ? (
               <span className="hidden sm:inline-block px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md text-[9px] uppercase tracking-wider font-mono font-semibold border border-indigo-100">
@@ -1265,6 +1316,16 @@ export default function App() {
                     onAddSindicato={handleAddSindicato}
                     onDeleteSindicato={handleDeleteSindicato}
                     googleToken={googleToken}
+                    isAdmin={currentUser?.role === "admin"}
+                  />
+                )}
+
+                {activeTab === "ferias" && (
+                  <FeriasView
+                    colaboradores={colaboradores}
+                    ferias={ferias}
+                    onSaveFerias={handleSaveFerias}
+                    onDeleteFerias={handleDeleteFerias}
                     isAdmin={currentUser?.role === "admin"}
                   />
                 )}

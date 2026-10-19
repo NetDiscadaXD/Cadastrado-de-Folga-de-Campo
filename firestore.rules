@@ -51,6 +51,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Coleção: ferias
+    match /ferias/{feriasId} {
+      allow read, write: if true;
+    }
+
     // Coleção: gdrive_credentials
     match /gdrive_credentials/{credentialId} {
       allow read, write: if true;

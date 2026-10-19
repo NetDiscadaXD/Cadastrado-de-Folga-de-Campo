@@ -73,6 +73,8 @@ export default function Cadastro({
   const [observacao, setObservacao] = useState("");
   const [dataTreinamentoAura, setDataTreinamentoAura] = useState("");
   const [matriculaAura, setMatriculaAura] = useState("");
+  const [projetoOrigem, setProjetoOrigem] = useState("");
+  const [salarioBase, setSalarioBase] = useState("");
 
   const handleCropComplete = async (croppedBlob: Blob) => {
     if (googleToken) {
@@ -185,6 +187,8 @@ export default function Cadastro({
     setObservacao("");
     setDataTreinamentoAura("");
     setMatriculaAura("");
+    setProjetoOrigem("");
+    setSalarioBase("");
     setErrorMsg("");
     setSuccessMsg("");
     setIsFormOpen(true);
@@ -211,6 +215,8 @@ export default function Cadastro({
     setObservacao(col.observacao || "");
     setDataTreinamentoAura(col.dataTreinamentoAura || "");
     setMatriculaAura(col.matriculaAura || "");
+    setProjetoOrigem(col.projetoOrigem || "");
+    setSalarioBase(col.salarioBase ? String(col.salarioBase) : "");
     setErrorMsg("");
     setSuccessMsg("");
     setIsFormOpen(true);
@@ -235,6 +241,11 @@ export default function Cadastro({
       return setErrorMsg("Ao marcar 'Transferido?', o nome do projeto atual é obrigatório.");
     }
 
+    const salarioNumero = parseFloat(salarioBase.replace(",", "."));
+    if (salarioBase.trim() && (isNaN(salarioNumero) || salarioNumero < 0)) {
+      return setErrorMsg("Valor bruto mensal inválido. Use apenas números (ex: 4500,00).");
+    }
+
     if (status === "Inativo" && !dataInativacao) {
       return setErrorMsg("Ao inativar o colaborador, a data de inativação é obrigatória.");
     }
@@ -257,7 +268,9 @@ export default function Cadastro({
       dataInativacao: status === "Inativo" ? dataInativacao : undefined,
       observacao: observacao.trim(),
       dataTreinamentoAura: dataTreinamentoAura || undefined,
-      matriculaAura: matriculaAura.trim() || undefined
+      matriculaAura: matriculaAura.trim() || undefined,
+      projetoOrigem: transferido ? projetoOrigem.trim() || undefined : undefined,
+      salarioBase: salarioBase.trim() ? salarioNumero : undefined
     };
 
     try {
@@ -786,19 +799,46 @@ export default function Cadastro({
 
             {/* Projeto Atual se Transferido */}
             {transferido && (
-              <div className="p-4 border border-[#141414] bg-[#E4E3E0]/40 max-w-md">
-                <label className="block text-[10px] font-mono font-bold text-[#141414] mb-1 uppercase">Nome do Projeto Atual*</label>
-                <input
-                  type="text"
-                  required={transferido}
-                  placeholder="EX: Complexo Eólico WindFort"
-                  value={projetoAtual}
-                  onChange={(e) => setProjetoAtual(e.target.value)}
-                  className="w-full bg-white text-[#141414] border border-[#141414] rounded-none px-3 py-1.5 text-xs focus:ring-1 focus:ring-[#141414] outline-none font-mono font-bold"
-                />
-                <span className="text-[9px] text-[#141414]/60 font-mono block mt-1 uppercase">Obrigatório para o controle de transferência.</span>
+              <div className="p-4 border border-[#141414] bg-[#E4E3E0]/40 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-[#141414] mb-1 uppercase">Nome do Projeto Atual*</label>
+                  <input
+                    type="text"
+                    required={transferido}
+                    placeholder="EX: Complexo Eólico WindFort"
+                    value={projetoAtual}
+                    onChange={(e) => setProjetoAtual(e.target.value)}
+                    className="w-full bg-white text-[#141414] border border-[#141414] rounded-none px-3 py-1.5 text-xs focus:ring-1 focus:ring-[#141414] outline-none font-mono font-bold"
+                  />
+                  <span className="text-[9px] text-[#141414]/60 font-mono block mt-1 uppercase">Obrigatório para o controle de transferência.</span>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono font-bold text-[#141414] mb-1 uppercase">Projeto de Origem</label>
+                  <input
+                    type="text"
+                    placeholder="EX: Parque Solar Sertão"
+                    value={projetoOrigem}
+                    onChange={(e) => setProjetoOrigem(e.target.value)}
+                    className="w-full bg-white text-[#141414] border border-[#141414] rounded-none px-3 py-1.5 text-xs focus:ring-1 focus:ring-[#141414] outline-none font-mono font-bold"
+                  />
+                  <span className="text-[9px] text-[#141414]/60 font-mono block mt-1 uppercase">Usado no rateio do custo de férias.</span>
+                </div>
               </div>
             )}
+
+            {/* Valor bruto / Custo com encargos (base de férias) */}
+            <div className="max-w-xs">
+              <label className="block text-[10px] font-mono font-bold text-[#141414]/75 mb-1 uppercase tracking-tight">Valor Bruto Mensal / Custo (R$)</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="EX: 4500,00"
+                value={salarioBase}
+                onChange={(e) => setSalarioBase(e.target.value)}
+                className="w-full bg-white text-[#141414] border border-[#141414] rounded-none px-3 py-1.5 text-xs focus:ring-1 focus:ring-[#141414] outline-none font-mono font-bold"
+              />
+              <span className="text-[9px] text-[#141414]/65 font-mono block mt-1 uppercase">Valor bruto já com encargos inclusos. Pré-preenche o cálculo de férias.</span>
+            </div>
 
             {/* Foto do Colaborador (Upload / URL) */}
             <div className="p-4 border border-[#141414]/20 bg-neutral-50/50 space-y-3">
