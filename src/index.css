@@ -1,0 +1,80 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500;700&family=Inter:ital,wght@0,300..900;1,300..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", ui-serif, Georgia, Cambria, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+body {
+  background-color: #E4E3E0;
+  color: #141414;
+}
+
+@media print {
+  body {
+    background-color: white !important;
+    color: black !important;
+  }
+  
+  aside,
+  header,
+  nav,
+  button,
+  .print\:hidden,
+  input[type="file"],
+  label:has(input[type="file"]) {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Target main wrapper padding resets */
+  .flex-1 {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* High contrast table styling for physical print or PDF */
+  table {
+    width: 100% !important;
+    border-color: #141414 !important;
+  }
+
+  th, td {
+    border-color: #141414 !important;
+    color: black !important;
+  }
+
+  .border, .border-b, .border-t, .border-r, .border-l {
+    border-color: #141414 !important;
+  }
+
+  /* Make sure background colors render properly in PDFs */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+/* Custom Scrollbar styled for brutality */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #E4E3E0;
+  border-left: 1px solid #141414;
+}
+::-webkit-scrollbar-thumb {
+  background: #141414;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2b2b2b;
+}

@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Regra global de segurança por padrão (bloqueia coleções não mapeadas)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Coleção: colaboradores
+    match /colaboradores/{matricula} {
+      allow read, write: if true;
+    }
+
+    // Coleção: asos
+    match /asos/{asoId} {
+      allow read, write: if true;
+    }
+
+    // Coleção: treinamentos
+    match /treinamentos/{treinamentoId} {
+      allow read, write: if true;
+    }
+
+    // Coleção: viagens
+    match /viagens/{viagemId} {
+      allow read, write: if true;
+    }
+
+    // Coleção: bloqueios
+    match /bloqueios/{bloqueioId} {
+      allow read, write: if true;
+    }
+
+    // Coleção: memorandos
+    match /memorandos/{memorandoId} {
+      allow read, write: if true;
+    }
+
+    // Coleção: espelhos
+    match /espelhos/{espelhoId} {
+      allow read, write: if true;
+    }
+
+    // Coleção: holerites
+    match /holerites/{holeriteId} {
+      allow read, write: if true;
+    }
+
+    // Coleção: sindicatos
+    match /sindicatos/{sindicatoId} {
+      allow read, write: if true;
+    }
+
+    // Coleção: gdrive_credentials
+    match /gdrive_credentials/{credentialId} {
+      allow read, write: if true;
+    }
+  }
+}

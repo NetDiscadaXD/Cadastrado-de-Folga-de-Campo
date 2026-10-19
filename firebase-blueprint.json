@@ -1,0 +1,217 @@
+{
+  "entities": {
+    "Colaborador": {
+      "title": "Colaborador",
+      "description": "Dados do colaborador do Consórcio Borborema",
+      "type": "object",
+      "properties": {
+        "matricula": { "type": "string", "description": "Matrícula única do colaborador" },
+        "nomeCompleto": { "type": "string", "description": "Nome completo" },
+        "funcao": { "type": "string", "description": "Função ou Cargo" },
+        "dataAdmissao": { "type": "string", "description": "Data de admissão no formato YYYY-MM-DD" },
+        "cpf": { "type": "string", "description": "Cadastro de Pessoas Físicas (CPF)" },
+        "tipoMaoDeObra": { "type": "string", "enum": ["MOI", "MOD"] },
+        "cidade": { "type": "string", "description": "Cidade de origem" },
+        "estado": { "type": "string", "description": "Estado de origem" },
+        "regimeTrabalho": { "type": "string", "enum": ["Alojado", "Local"] },
+        "dataInicioProjeto": { "type": "string", "description": "Data de início no projeto YYYY-MM-DD" },
+        "transferido": { "type": "boolean", "description": "Se o colaborador foi transferido" },
+        "projetoAtual": { "type": "string", "description": "Nome do projeto atual" },
+        "fotoUrl": { "type": "string", "description": "Foto opcional do colaborador" },
+        "status": { "type": "string", "enum": ["Ativo", "Inativo"] },
+        "dataInativacao": { "type": "string", "description": "Data de inativação no formato YYYY-MM-DD" }
+      },
+      "required": ["matricula", "nomeCompleto", "funcao", "dataAdmissao", "cpf", "tipoMaoDeObra", "cidade", "estado", "regimeTrabalho", "dataInicioProjeto", "transferido", "projetoAtual"]
+    },
+    "ASO": {
+      "title": "ASO",
+      "description": "Atestado de Saúde Ocupacional do colaborador",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único do ASO" },
+        "matricula": { "type": "string", "description": "Matrícula do colaborador associado" },
+        "tipoExame": { "type": "string", "description": "Tipo de exame realizado" },
+        "dataRealizacao": { "type": "string", "description": "Data do exame YYYY-MM-DD" },
+        "validadeMeses": { "type": "number", "description": "Validade do exame em meses" }
+      },
+      "required": ["id", "matricula", "tipoExame", "dataRealizacao", "validadeMeses"]
+    },
+    "Treinamento": {
+      "title": "Treinamento",
+      "description": "Treinamento obrigatório (NRs, Integrações, etc.)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único do treinamento" },
+        "matricula": { "type": "string", "description": "Matrícula do colaborador associado" },
+        "nomeTreinamento": { "type": "string", "description": "Nome do treinamento realizado" },
+        "dataRealizacao": { "type": "string", "description": "Data do treinamento YYYY-MM-DD" },
+        "periodicidade": { "type": "string", "enum": ["1 ANO", "2 ANOS", "5 ANOS"] }
+      },
+      "required": ["id", "matricula", "nomeTreinamento", "dataRealizacao", "periodicidade"]
+    },
+    "Viagem": {
+      "title": "Viagem",
+      "description": "Histórico de viagem de campo do colaborador",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único da viagem" },
+        "matricula": { "type": "string", "description": "Matrícula do colaborador associado" },
+        "dataRealInicio": { "type": "string", "description": "Data real de início YYYY-MM-DD" },
+        "dataRealRetorno": { "type": "string", "description": "Data real de retorno YYYY-MM-DD" },
+        "tipoTransporte": { "type": "string", "enum": ["Aéreo", "Terrestre"] },
+        "valorPassagem": { "type": "number", "description": "Custo da passagem" },
+        "adiantamento": { "type": "number", "description": "Valor do adiantamento" },
+        "dataDeposito": { "type": "string", "description": "Data do depósito de adiantamento" },
+        "anexoPassagemUrl": { "type": "string", "description": "Anexo da passagem" },
+        "anexoPassagemNome": { "type": "string", "description": "Nome do anexo da passagem" },
+        "anexoAdiantamentoUrl": { "type": "string", "description": "Anexo do adiantamento" },
+        "anexoAdiantamentoNome": { "type": "string", "description": "Nome do anexo do adiantamento" },
+        "vendeuFolga": { "type": "boolean", "description": "Se vendeu folga de campo" },
+        "dataVendaFolga": { "type": "string", "description": "Data de venda de folga YYYY-MM-DD" },
+        "valorVendaFolga": { "type": "number", "description": "Valor da venda de folga" },
+        "anexoVendaFolgaUrl": { "type": "string", "description": "Anexo da venda de folga" },
+        "anexoVendaFolgaNome": { "type": "string", "description": "Nome do anexo da venda de folga" }
+      },
+      "required": ["id", "matricula", "dataRealInicio", "dataRealRetorno", "tipoTransporte", "valorPassagem", "adiantamento"]
+    },
+    "BloqueioCracha": {
+      "title": "BloqueioCracha",
+      "description": "Controle de bloqueio de crachás por inconformidade",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único do bloqueio" },
+        "matricula": { "type": "string", "description": "Matrícula do colaborador" },
+        "origem": { "type": "string", "enum": ["ASO", "Treinamento"] },
+        "dataBloqueio": { "type": "string", "description": "Data de bloqueio YYYY-MM-DD" },
+        "motivoDetalhado": { "type": "string", "description": "Motivo do bloqueio" },
+        "tipoTreinamentoPendente": { "type": "string", "description": "Tipo de treinamento pendente" },
+        "dataLiberacao": { "type": "string", "description": "Data de liberação/desbloqueio YYYY-MM-DD" },
+        "dataRealizacao": { "type": "string", "description": "Data de realização da pendência" },
+        "tipoExame": { "type": "string", "description": "Tipo de exame médico associado" },
+        "validadeMeses": { "type": "number", "description": "Validade associada ao ASO corrigido" }
+      },
+      "required": ["id", "matricula", "origem", "dataBloqueio", "motivoDetalhado"]
+    },
+    "Memorando": {
+      "title": "Memorando",
+      "description": "Memorando de folga de campo ou venda de folga",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único do memorando" },
+        "matricula": { "type": "string", "description": "Matrícula do colaborador beneficiário" },
+        "nomeColaborador": { "type": "string", "description": "Nome do colaborador" },
+        "tipoMemorando": { "type": "string", "enum": ["Folga de campo", "Venda de Folga"] },
+        "passagemOk": { "type": "boolean", "description": "Status da passagem" },
+        "passagemOkAt": { "type": "string", "description": "Data e hora de check-in da passagem" },
+        "adiantamentoOk": { "type": "boolean", "description": "Status do adiantamento" },
+        "adiantamentoOkAt": { "type": "string", "description": "Data e hora de check-in de adiantamento" },
+        "envioSedeOk": { "type": "boolean", "description": "Status de envio à sede" },
+        "envioSedeOkAt": { "type": "string", "description": "Data e hora de envio" },
+        "finalizada": { "type": "boolean", "description": "Status de finalização" },
+        "finalizadaAt": { "type": "string", "description": "Data e hora de homologação final" },
+        "arquivoGeradoOk": { "type": "boolean", "description": "Se arquivo para financeira foi gerado" },
+        "arquivoGeradoAt": { "type": "string", "description": "Data e hora de geração do arquivo" },
+        "anexadoFolhaOk": { "type": "boolean", "description": "Se anexado à folha" },
+        "anexadoFolhaAt": { "type": "string", "description": "Data e hora de anexo à folha" },
+        "dataSaida": { "type": "string", "description": "Data de saída planejada YYYY-MM-DD" },
+        "dataRetorno": { "type": "string", "description": "Data de retorno planejada YYYY-MM-DD" },
+        "retornoTrabalho": { "type": "string", "description": "Data de retorno efetivo ao canteiro" },
+        "destino": { "type": "string", "description": "Local de destino" },
+        "tipoPassagem": { "type": "string", "enum": ["Terrestre", "Aérea", "Carro"] },
+        "anexoNome": { "type": "string", "description": "Nome do arquivo anexo" },
+        "anexoConteudo": { "type": "string", "description": "Conteúdo do arquivo em formato base64" },
+        "dataCriacao": { "type": "string", "description": "Data de criação do memorando" },
+        "observacao": { "type": "string", "description": "Despacho ou observações específicas" }
+      },
+      "required": ["id", "matricula", "nomeColaborador", "tipoMemorando", "passagemOk", "adiantamentoOk", "envioSedeOk", "finalizada", "dataCriacao"]
+    },
+    "Espelho": {
+      "title": "Espelho",
+      "description": "Espelho de ponto mensal do colaborador",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único" },
+        "matricula": { "type": "string", "description": "Matrícula do colaborador" },
+        "mes": { "type": "string", "description": "Mês de referência" },
+        "ano": { "type": "number", "description": "Ano de referência" },
+        "fileName": { "type": "string", "description": "Nome do arquivo original" },
+        "fileUrl": { "type": "string", "description": "URL de visualização" },
+        "driveFileId": { "type": "string", "description": "Google Drive File ID" },
+        "driveFolderId": { "type": "string", "description": "Google Drive Folder ID" },
+        "dataUpload": { "type": "string", "description": "Data do upload YYYY-MM-DD" },
+        "tipoIsencao": { "type": "string", "enum": ["nao_bate_ponto", "admitido_no_mes"] }
+      },
+      "required": ["id", "matricula", "mes", "ano", "fileName", "dataUpload"]
+    },
+    "Holerite": {
+      "title": "Holerite",
+      "description": "Holerite ou contracheque do colaborador",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único" },
+        "matricula": { "type": "string", "description": "Matrícula do colaborador" },
+        "mes": { "type": "string", "description": "Mês de referência" },
+        "ano": { "type": "number", "description": "Ano de referência" },
+        "fileName": { "type": "string", "description": "Nome do arquivo original" },
+        "fileUrl": { "type": "string", "description": "URL de visualização" },
+        "driveFileId": { "type": "string", "description": "Google Drive File ID" },
+        "driveFolderId": { "type": "string", "description": "Google Drive Folder ID" },
+        "dataUpload": { "type": "string", "description": "Data do upload YYYY-MM-DD" }
+      },
+      "required": ["id", "matricula", "mes", "ano", "fileName", "dataUpload"]
+    },
+    "Sindicato": {
+      "title": "Sindicato",
+      "description": "Termo de sindicato de alojamento ou filiação",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador único" },
+        "matricula": { "type": "string", "description": "Matrícula do colaborador" },
+        "fileName": { "type": "string", "description": "Nome do arquivo original" },
+        "fileUrl": { "type": "string", "description": "URL de visualização" },
+        "driveFileId": { "type": "string", "description": "Google Drive File ID" },
+        "driveFolderId": { "type": "string", "description": "Google Drive Folder ID" },
+        "dataUpload": { "type": "string", "description": "Data do upload YYYY-MM-DD" }
+      },
+      "required": ["id", "matricula", "fileName", "dataUpload"]
+    }
+  },
+  "firestore": {
+    "colaboradores": {
+      "schema": "Colaborador",
+      "description": "Coleção de dados fundamentais de colaboradores"
+    },
+    "asos": {
+      "schema": "ASO",
+      "description": "Coleção de registros de ASOs médicos"
+    },
+    "treinamentos": {
+      "schema": "Treinamento",
+      "description": "Coleção de registros de Treinamento Regulamentar"
+    },
+    "viagens": {
+      "schema": "Viagem",
+      "description": "Coleção de registros de logística de Viagem de campo"
+    },
+    "bloqueios": {
+      "schema": "BloqueioCracha",
+      "description": "Coleção de registros de crachá bloqueados"
+    },
+    "memorandos": {
+      "schema": "Memorando",
+      "description": "Coleção de documentos e memorandos assinados"
+    },
+    "espelhos": {
+      "schema": "Espelho",
+      "description": "Coleção de espelhos de ponto mensais"
+    },
+    "holerites": {
+      "schema": "Holerite",
+      "description": "Coleção de holerites mensais"
+    },
+    "sindicatos": {
+      "schema": "Sindicato",
+      "description": "Coleção de termos ou comprovantes de sindicato"
+    }
+  }
+}

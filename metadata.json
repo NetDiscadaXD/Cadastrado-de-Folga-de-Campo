@@ -1,0 +1,6 @@
+{
+  "name": "Borborema ERP - Filtragem",
+  "description": "ERP system for logistics and human resources management in field operations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
