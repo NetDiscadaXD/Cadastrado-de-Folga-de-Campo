@@ -443,9 +443,9 @@ export default function SindicatosView({
       </div>
 
       {/* Main Table */}
-      <div className="overflow-x-auto border border-[#141414]/15">
+      <div className="overflow-x-auto overflow-y-auto max-h-[580px] custom-scrollbar border border-[#141414]/15 rounded-lg">
         <table className="w-full text-left font-sans border-collapse">
-          <thead>
+          <thead className="sticky top-0 z-10 shadow-xs bg-slate-100">
             <tr className="bg-slate-100 border-b border-[#141414]/15 text-[10px] font-mono uppercase text-neutral-500 font-bold tracking-wider">
               <th className="px-5 py-3 w-12 text-center">
                 <button

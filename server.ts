@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
-import { Colaborador, ASO, Treinamento, Viagem, BloqueioCracha, Memorando, Espelho, Holerite, Sindicato, Ferias } from "./src/types";
+import { Colaborador, ASO, Treinamento, Viagem, BloqueioCracha, Memorando, Espelho, Holerite, Sindicato, Ferias, DisponibilidadeColaborador, ObservacaoColaborador, ConfiguracaoCustos, AuditLog } from "./src/types";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, getDoc } from "firebase/firestore";
 
@@ -33,6 +33,10 @@ interface DatabaseSchema {
   holerites: Holerite[];
   sindicatos: Sindicato[];
   ferias: Ferias[];
+  disponibilidades?: DisponibilidadeColaborador[];
+  observacoes?: ObservacaoColaborador[];
+  configuracaoCustos?: ConfiguracaoCustos;
+  logs?: AuditLog[];
 }
 
 const DEFAULT_DB: DatabaseSchema = {
@@ -186,7 +190,16 @@ const DEFAULT_DB: DatabaseSchema = {
   espelhos: [],
   holerites: [],
   sindicatos: [],
-  ferias: []
+  ferias: [],
+  disponibilidades: [],
+  observacoes: [],
+  configuracaoCustos: {
+    id: "default",
+    encargosAdicionaisPct: 0,
+    beneficiosMensalPadrao: 800,
+    outrosCustosMensalPadrao: 400,
+    salarioBasePadraoFallback: 0
+  }
 };
 
 // Cache em memória para acesso síncrono ultra-rápido nas rotas Express
@@ -227,7 +240,9 @@ async function seedDefaultData(db: DatabaseSchema) {
       { name: "espelhos", items: db.espelhos || [], keyField: "id" },
       { name: "holerites", items: db.holerites || [], keyField: "id" },
       { name: "sindicatos", items: db.sindicatos || [], keyField: "id" },
-      { name: "ferias", items: db.ferias || [], keyField: "id" }
+      { name: "ferias", items: db.ferias || [], keyField: "id" },
+      { name: "disponibilidades", items: db.disponibilidades || [], keyField: "id" },
+      { name: "observacoes", items: db.observacoes || [], keyField: "id" }
     ];
 
     for (const col of collections) {
@@ -255,7 +270,17 @@ export async function syncFromFirestore(): Promise<DatabaseSchema> {
     espelhos: [],
     holerites: [],
     sindicatos: [],
-    ferias: []
+    ferias: [],
+    disponibilidades: [],
+    observacoes: [],
+    logs: [],
+    configuracaoCustos: {
+      id: "default",
+      encargosAdicionaisPct: 0,
+      beneficiosMensalPadrao: 800,
+      outrosCustosMensalPadrao: 400,
+      salarioBasePadraoFallback: 0
+    }
   };
 
   let localBackup: any = null;
@@ -278,7 +303,10 @@ export async function syncFromFirestore(): Promise<DatabaseSchema> {
       { name: "espelhos", keyField: "id" },
       { name: "holerites", keyField: "id" },
       { name: "sindicatos", keyField: "id" },
-      { name: "ferias", keyField: "id" }
+      { name: "ferias", keyField: "id" },
+      { name: "disponibilidades", keyField: "id" },
+      { name: "observacoes", keyField: "id" },
+      { name: "logs", keyField: "id" }
     ];
 
     let hasAnyData = false;
@@ -367,7 +395,10 @@ async function syncChangesToFirestore(oldDb: DatabaseSchema, newDb: DatabaseSche
     { name: "espelhos", keyField: "id" },
     { name: "holerites", keyField: "id" },
     { name: "sindicatos", keyField: "id" },
-    { name: "ferias", keyField: "id" }
+    { name: "ferias", keyField: "id" },
+    { name: "disponibilidades", keyField: "id" },
+    { name: "observacoes", keyField: "id" },
+    { name: "logs", keyField: "id" }
   ];
 
   for (const col of collectionsToSync) {
@@ -437,6 +468,68 @@ function writeDB(data: DatabaseSchema) {
   } catch (error) {
     console.error("Erro ao escrever no banco de dados local:", error);
   }
+}
+
+// ==========================================
+// SISTEMA DE AUDITORIA E LOGS DE AÇÕES
+// ==========================================
+
+function formatBrDateStr(dateStr?: string): string {
+  if (!dateStr) return "-";
+  try {
+    const clean = dateStr.split("T")[0];
+    const parts = clean.split("-");
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+  } catch {}
+  return dateStr;
+}
+
+function getReqUser(req: express.Request): string {
+  if (req.headers["x-user-name"]) {
+    try {
+      return decodeURIComponent(String(req.headers["x-user-name"]));
+    } catch {
+      return String(req.headers["x-user-name"]);
+    }
+  }
+  return req.body?.usuario || req.body?.autor || "Alexsandro (Admin)";
+}
+
+function recordAuditLog(
+  modulo: AuditLog["modulo"],
+  acao: AuditLog["acao"],
+  descricao: string,
+  extra?: {
+    usuario?: string;
+    matricula?: string;
+    nomeColaborador?: string;
+    detalhes?: any;
+  }
+): AuditLog {
+  const db = loadDB();
+  db.logs = db.logs || [];
+  const newLog: AuditLog = {
+    id: "LOG-" + Date.now() + "-" + Math.floor(Math.random() * 10000),
+    dataHora: new Date().toISOString(),
+    usuario: extra?.usuario || "Alexsandro (Admin)",
+    modulo,
+    acao,
+    matricula: extra?.matricula,
+    nomeColaborador: extra?.nomeColaborador,
+    descricao,
+    detalhes: extra?.detalhes
+  };
+
+  db.logs.unshift(newLog);
+  // Mantém os últimos 3000 registros para alta performance e auditoria completa
+  if (db.logs.length > 3000) {
+    db.logs = db.logs.slice(0, 3000);
+  }
+  writeDB(db);
+  console.log(`[AuditLog] [${newLog.modulo}] [${newLog.acao}] ${newLog.descricao} (por ${newLog.usuario})`);
+  return newLog;
 }
 
 // ENDPOINTS DA API
@@ -534,6 +627,14 @@ app.post("/api/colaboradores", (req, res) => {
 
   db.colaboradores.push(novo);
   writeDB(db);
+
+  recordAuditLog("Colaboradores", "Inclusão", `Cadastrou colaborador: ${novo.nomeCompleto} (Matrícula: ${novo.matricula}) - Função: ${novo.funcao || "-"}, Regime: ${novo.regimeTrabalho || "-"}`, {
+    usuario: getReqUser(req),
+    matricula: novo.matricula,
+    nomeColaborador: novo.nomeCompleto,
+    detalhes: { funcao: novo.funcao, regimeTrabalho: novo.regimeTrabalho, projetoAtual: novo.projetoAtual }
+  });
+
   res.status(211).json(novo);
 });
 
@@ -547,15 +648,26 @@ app.put("/api/colaboradores/:matricula", (req, res) => {
     return res.status(404).json({ error: "Colaborador não encontrado." });
   }
 
-  db.colaboradores[index] = { ...db.colaboradores[index], ...update, matricula }; // Mantém a matrícula correta
+  const antes = db.colaboradores[index];
+  db.colaboradores[index] = { ...antes, ...update, matricula };
   writeDB(db);
-  res.json(db.colaboradores[index]);
+
+  const colAtualizado = db.colaboradores[index];
+  recordAuditLog("Colaboradores", "Edição", `Atualizou cadastro de ${colAtualizado.nomeCompleto} (Matrícula: ${matricula})`, {
+    usuario: getReqUser(req),
+    matricula,
+    nomeColaborador: colAtualizado.nomeCompleto,
+    detalhes: { camposAtualizados: Object.keys(update) }
+  });
+
+  res.json(colAtualizado);
 });
 
 app.delete("/api/colaboradores/:matricula", (req, res) => {
   const db = loadDB();
   const { matricula } = req.params;
 
+  const col = db.colaboradores.find(c => c.matricula === matricula);
   const countBefore = db.colaboradores.length;
   db.colaboradores = db.colaboradores.filter(c => c.matricula !== matricula);
   
@@ -563,13 +675,20 @@ app.delete("/api/colaboradores/:matricula", (req, res) => {
     return res.status(444).json({ error: "Colaborador não encontrado." });
   }
 
-  // Cascata opcional ou apenas remove das outras tabelas
+  // Cascata
   db.asos = db.asos.filter(a => a.matricula !== matricula);
   db.treinamentos = db.treinamentos.filter(t => t.matricula !== matricula);
   db.viagens = db.viagens.filter(v => v.matricula !== matricula);
   db.bloqueios = db.bloqueios.filter(b => b.matricula !== matricula);
 
   writeDB(db);
+
+  recordAuditLog("Colaboradores", "Exclusão", `Excluiu cadastro de ${col?.nomeCompleto || matricula} (Matrícula: ${matricula}) e removeu dados vinculados em cascata`, {
+    usuario: getReqUser(req),
+    matricula,
+    nomeColaborador: col?.nomeCompleto
+  });
+
   res.json({ success: true, message: "Colaborador deletado com sucesso." });
 });
 
@@ -589,8 +708,8 @@ app.post("/api/asos", (req, res) => {
   }
 
   // Verifica se o colaborador existe
-  const colIndex = db.colaboradores.findIndex(c => c.matricula === novo.matricula);
-  if (colIndex === -1) {
+  const col = db.colaboradores.find(c => c.matricula === novo.matricula);
+  if (!col) {
     return res.status(400).json({ error: "Colaborador não encontrado." });
   }
 
@@ -605,8 +724,15 @@ app.post("/api/asos", (req, res) => {
   });
   
   db.asos.push(novo);
-  
   writeDB(db);
+
+  recordAuditLog("ASO", "Inclusão", `Lançou ASO [${novo.tipoExame}] realizado em ${formatBrDateStr(novo.dataRealizacao)} (Validade: ${novo.validadeMeses} meses) para ${col.nomeCompleto} (Matrícula: ${novo.matricula})`, {
+    usuario: getReqUser(req),
+    matricula: novo.matricula,
+    nomeColaborador: col.nomeCompleto,
+    detalhes: { tipoExame: novo.tipoExame, dataRealizacao: novo.dataRealizacao, validadeMeses: novo.validadeMeses }
+  });
+
   res.json(novo);
 });
 
@@ -625,8 +751,8 @@ app.post("/api/treinamentos", (req, res) => {
   }
 
   // Verifica colaborador
-  const colIndex = db.colaboradores.findIndex(c => c.matricula === novo.matricula);
-  if (colIndex === -1) {
+  const col = db.colaboradores.find(c => c.matricula === novo.matricula);
+  if (!col) {
     return res.status(400).json({ error: "Colaborador não encontrado." });
   }
 
@@ -634,6 +760,14 @@ app.post("/api/treinamentos", (req, res) => {
   
   db.treinamentos.push(novo);
   writeDB(db);
+
+  recordAuditLog("Treinamentos", "Inclusão", `Registrou treinamento [${novo.nomeTreinamento}] realizado em ${formatBrDateStr(novo.dataRealizacao)} (${novo.periodicidade}) para ${col.nomeCompleto} (Matrícula: ${novo.matricula})`, {
+    usuario: getReqUser(req),
+    matricula: novo.matricula,
+    nomeColaborador: col.nomeCompleto,
+    detalhes: { nomeTreinamento: novo.nomeTreinamento, dataRealizacao: novo.dataRealizacao, periodicidade: novo.periodicidade }
+  });
+
   res.json(novo);
 });
 
@@ -652,19 +786,33 @@ app.post("/api/viagens", (req, res) => {
   }
 
   // Verifica colaborador
-  const colIndex = db.colaboradores.findIndex(c => c.matricula === novo.matricula);
-  if (colIndex === -1) {
+  const col = db.colaboradores.find(c => c.matricula === novo.matricula);
+  if (!col) {
     return res.status(400).json({ error: "Colaborador não encontrado." });
   }
 
   const existingIndex = db.viagens.findIndex(v => v.id === novo.id);
-  if (existingIndex !== -1) {
+  const isEdicao = existingIndex !== -1;
+  if (isEdicao) {
     db.viagens[existingIndex] = novo;
   } else {
     novo.id = novo.id || "V-" + Date.now();
     db.viagens.push(novo);
   }
   writeDB(db);
+
+  recordAuditLog(
+    "Folgas e Viagens",
+    isEdicao ? "Edição" : "Inclusão",
+    `${isEdicao ? "Atualizou" : "Lançou"} logística de folga de campo (${formatBrDateStr(novo.dataRealInicio)} a ${formatBrDateStr(novo.dataRealRetorno)}, ${novo.tipoTransporte}${novo.vendeuFolga ? " [Venda de Folga]" : ""}) para ${col.nomeCompleto} (Matrícula: ${novo.matricula})`,
+    {
+      usuario: getReqUser(req),
+      matricula: novo.matricula,
+      nomeColaborador: col.nomeCompleto,
+      detalhes: { dataRealInicio: novo.dataRealInicio, dataRealRetorno: novo.dataRealRetorno, valorPassagem: novo.valorPassagem, adiantamento: novo.adiantamento, vendeuFolga: novo.vendeuFolga }
+    }
+  );
+
   res.json(novo);
 });
 
@@ -683,8 +831,8 @@ app.post("/api/bloqueios", (req, res) => {
   }
 
   // Verifica colaborador
-  const colIndex = db.colaboradores.findIndex(c => c.matricula === novo.matricula);
-  if (colIndex === -1) {
+  const col = db.colaboradores.find(c => c.matricula === novo.matricula);
+  if (!col) {
     return res.status(400).json({ error: "Colaborador não encontrado." });
   }
 
@@ -693,6 +841,14 @@ app.post("/api/bloqueios", (req, res) => {
 
   db.bloqueios.push(novo);
   writeDB(db);
+
+  recordAuditLog("Bloqueios de Crachá", "Inclusão", `Registrou bloqueio de crachá na portaria para ${col.nomeCompleto} (Matrícula: ${novo.matricula}) - Origem: ${novo.origem} - Motivo: ${novo.motivoDetalhado}`, {
+    usuario: getReqUser(req),
+    matricula: novo.matricula,
+    nomeColaborador: col.nomeCompleto,
+    detalhes: { origem: novo.origem, dataBloqueio: novo.dataBloqueio, motivoDetalhado: novo.motivoDetalhado }
+  });
+
   res.json(novo);
 });
 
@@ -711,6 +867,7 @@ app.put("/api/bloqueios/:id/liberar", (req, res) => {
   }
 
   const block = db.bloqueios[index];
+  const col = db.colaboradores.find(c => c.matricula === block.matricula);
   block.dataLiberacao = dataLiberacao;
   
   // Define a data de realização de fato (caso não informada, assume a de liberação)
@@ -772,6 +929,14 @@ app.put("/api/bloqueios/:id/liberar", (req, res) => {
   }
 
   writeDB(db);
+
+  recordAuditLog("Bloqueios de Crachá", "Liberação / Desbloqueio", `Liberou e regularizou crachá na portaria de ${col?.nomeCompleto || block.matricula} (Matrícula: ${block.matricula}) em ${formatBrDateStr(dataLiberacao)}`, {
+    usuario: getReqUser(req),
+    matricula: block.matricula,
+    nomeColaborador: col?.nomeCompleto,
+    detalhes: { dataLiberacao, dataRealizacao: targetRealizacaoDate }
+  });
+
   res.json(block);
 });
 
@@ -779,8 +944,19 @@ app.put("/api/bloqueios/:id/liberar", (req, res) => {
 app.delete("/api/asos/:id", (req, res) => {
   const db = loadDB();
   const { id } = req.params;
+  const aso = db.asos.find(a => a.id === id);
+  const col = aso ? db.colaboradores.find(c => c.matricula === aso.matricula) : null;
   db.asos = db.asos.filter(a => a.id !== id);
   writeDB(db);
+
+  if (aso) {
+    recordAuditLog("ASO", "Exclusão", `Excluiu lançamento de ASO [${aso.tipoExame}] de ${col?.nomeCompleto || aso.matricula} (Matrícula: ${aso.matricula})`, {
+      usuario: getReqUser(req),
+      matricula: aso.matricula,
+      nomeColaborador: col?.nomeCompleto
+    });
+  }
+
   res.json({ success: true });
 });
 
@@ -788,36 +964,77 @@ app.delete("/api/asos/:matricula/:tipoExame", (req, res) => {
   const db = loadDB();
   const { matricula, tipoExame } = req.params;
   const decodedTipo = decodeURIComponent(tipoExame).normalize("NFC").trim().toLowerCase();
-  
+  const col = db.colaboradores.find(c => c.matricula === matricula);
+
   db.asos = db.asos.filter(a => {
     const normTipoExistente = a.tipoExame.normalize("NFC").trim().toLowerCase();
     return !(a.matricula.trim().toLowerCase() === matricula.trim().toLowerCase() && normTipoExistente === decodedTipo);
   });
   writeDB(db);
+
+  recordAuditLog("ASO", "Exclusão", `Excluiu lançamento de ASO [${tipoExame}] de ${col?.nomeCompleto || matricula} (Matrícula: ${matricula})`, {
+    usuario: getReqUser(req),
+    matricula,
+    nomeColaborador: col?.nomeCompleto
+  });
+
   res.json({ success: true });
 });
 
 app.delete("/api/treinamentos/:id", (req, res) => {
   const db = loadDB();
   const { id } = req.params;
+  const tr = db.treinamentos.find(t => t.id === id);
+  const col = tr ? db.colaboradores.find(c => c.matricula === tr.matricula) : null;
   db.treinamentos = db.treinamentos.filter(t => t.id !== id);
   writeDB(db);
+
+  if (tr) {
+    recordAuditLog("Treinamentos", "Exclusão", `Excluiu certificado de treinamento [${tr.nomeTreinamento}] de ${col?.nomeCompleto || tr.matricula} (Matrícula: ${tr.matricula})`, {
+      usuario: getReqUser(req),
+      matricula: tr.matricula,
+      nomeColaborador: col?.nomeCompleto
+    });
+  }
+
   res.json({ success: true });
 });
 
 app.delete("/api/viagens/:id", (req, res) => {
   const db = loadDB();
   const { id } = req.params;
+  const v = db.viagens.find(item => item.id === id);
+  const col = v ? db.colaboradores.find(c => c.matricula === v.matricula) : null;
   db.viagens = db.viagens.filter(v => v.id !== id);
   writeDB(db);
+
+  if (v) {
+    recordAuditLog("Folgas e Viagens", "Exclusão", `Excluiu programação de folga/viagem de ${col?.nomeCompleto || v.matricula} (Matrícula: ${v.matricula})`, {
+      usuario: getReqUser(req),
+      matricula: v.matricula,
+      nomeColaborador: col?.nomeCompleto
+    });
+  }
+
   res.json({ success: true });
 });
 
 app.delete("/api/bloqueios/:id", (req, res) => {
   const db = loadDB();
   const { id } = req.params;
+  const b = db.bloqueios.find(item => item.id === id);
+  const col = b ? db.colaboradores.find(c => c.matricula === b.matricula) : null;
   db.bloqueios = db.bloqueios.filter(b => b.id !== id);
   writeDB(db);
+
+  if (b) {
+    recordAuditLog("Bloqueios de Crachá", "Exclusão", `Excluiu registro de bloqueio de crachá de ${col?.nomeCompleto || b.matricula} (Matrícula: ${b.matricula})`, {
+      usuario: getReqUser(req),
+      matricula: b.matricula,
+      nomeColaborador: col?.nomeCompleto
+    });
+  }
+
   res.json({ success: true });
 });
 
@@ -843,6 +1060,14 @@ app.post("/api/memorandos", (req, res) => {
   db.memorandos = db.memorandos || [];
   db.memorandos.push(novo);
   writeDB(db);
+
+  recordAuditLog("Memorandos", "Inclusão", `Criou memorando [${novo.tipoMemorando}] para ${novo.nomeColaborador} (Matrícula: ${novo.matricula})`, {
+    usuario: getReqUser(req),
+    matricula: novo.matricula,
+    nomeColaborador: novo.nomeColaborador,
+    detalhes: { tipoMemorando: novo.tipoMemorando, dataCriacao: novo.dataCriacao }
+  });
+
   res.json(novo);
 });
 
@@ -857,14 +1082,32 @@ app.put("/api/memorandos/:id", (req, res) => {
   const atualizado = { ...db.memorandos[index], ...req.body };
   db.memorandos[index] = atualizado;
   writeDB(db);
+
+  recordAuditLog("Memorandos", "Edição", `Atualizou checklist/status do memorando [${atualizado.tipoMemorando}] de ${atualizado.nomeColaborador} (Matrícula: ${atualizado.matricula})`, {
+    usuario: getReqUser(req),
+    matricula: atualizado.matricula,
+    nomeColaborador: atualizado.nomeColaborador,
+    detalhes: { passagemOk: atualizado.passagemOk, adiantamentoOk: atualizado.adiantamentoOk, envioSedeOk: atualizado.envioSedeOk, finalizada: atualizado.finalizada }
+  });
+
   res.json(atualizado);
 });
 
 app.delete("/api/memorandos/:id", (req, res) => {
   const db = loadDB();
   const { id } = req.params;
+  const memo = (db.memorandos || []).find(m => m.id === id);
   db.memorandos = (db.memorandos || []).filter(m => m.id !== id);
   writeDB(db);
+
+  if (memo) {
+    recordAuditLog("Memorandos", "Exclusão", `Excluiu memorando [${memo.tipoMemorando}] de ${memo.nomeColaborador} (Matrícula: ${memo.matricula})`, {
+      usuario: getReqUser(req),
+      matricula: memo.matricula,
+      nomeColaborador: memo.nomeColaborador
+    });
+  }
+
   res.json({ success: true });
 });
 
@@ -883,20 +1126,45 @@ app.post("/api/espelhos", (req, res) => {
   novo.id = novo.id || "ESP-" + Date.now();
   novo.dataUpload = novo.dataUpload || new Date().toISOString().split("T")[0];
 
+  const col = (db.colaboradores || []).find(c => c.matricula === novo.matricula);
+
   db.espelhos = db.espelhos || [];
   // Se já existe um espelho de ponto para a mesma matrícula, mês e ano, substitui pelo novo
   db.espelhos = db.espelhos.filter(e => !(e.matricula === novo.matricula && e.mes === novo.mes && e.ano === novo.ano));
   db.espelhos.push(novo);
 
   writeDB(db);
+
+  const descricaoEspelho = novo.tipoIsencao
+    ? `Marcou isenção de espelho de ponto (${novo.tipoIsencao === "nao_bate_ponto" ? "Não bate ponto" : "Admitido no mês"}) para ${col?.nomeCompleto || novo.matricula} referente a ${novo.mes}/${novo.ano}`
+    : `Incluiu espelho de ponto de ${novo.mes}/${novo.ano} para o colaborador ${col?.nomeCompleto || novo.matricula} (Matrícula: ${novo.matricula}) - Arquivo: ${novo.fileName}`;
+
+  recordAuditLog("Espelhos", "Upload de Documento", descricaoEspelho, {
+    usuario: getReqUser(req),
+    matricula: novo.matricula,
+    nomeColaborador: col?.nomeCompleto,
+    detalhes: { mes: novo.mes, ano: novo.ano, fileName: novo.fileName, tipoIsencao: novo.tipoIsencao }
+  });
+
   res.json(novo);
 });
 
 app.delete("/api/espelhos/:id", (req, res) => {
   const db = loadDB();
   const { id } = req.params;
+  const esp = (db.espelhos || []).find(e => e.id !== id);
+  const col = esp ? (db.colaboradores || []).find(c => c.matricula === esp.matricula) : null;
   db.espelhos = (db.espelhos || []).filter(e => e.id !== id);
   writeDB(db);
+
+  if (esp) {
+    recordAuditLog("Espelhos", "Exclusão", `Excluiu espelho de ponto referente a ${esp.mes}/${esp.ano} de ${col?.nomeCompleto || esp.matricula} (Matrícula: ${esp.matricula})`, {
+      usuario: getReqUser(req),
+      matricula: esp.matricula,
+      nomeColaborador: col?.nomeCompleto
+    });
+  }
+
   res.json({ success: true });
 });
 
@@ -915,20 +1183,41 @@ app.post("/api/holerites", (req, res) => {
   novo.id = novo.id || "HOL-" + Date.now();
   novo.dataUpload = novo.dataUpload || new Date().toISOString().split("T")[0];
 
+  const col = (db.colaboradores || []).find(c => c.matricula === novo.matricula);
+
   db.holerites = db.holerites || [];
   // Se já existe um holerite para a mesma matrícula, mês e ano, substitui pelo novo
   db.holerites = db.holerites.filter(h => !(h.matricula === novo.matricula && h.mes === novo.mes && h.ano === novo.ano));
   db.holerites.push(novo);
 
   writeDB(db);
+
+  recordAuditLog("Holerites", "Upload de Documento", `Anexou holerite de pagamento referente a ${novo.mes}/${novo.ano} para ${col?.nomeCompleto || novo.matricula} (Matrícula: ${novo.matricula}) - Arquivo: ${novo.fileName}`, {
+    usuario: getReqUser(req),
+    matricula: novo.matricula,
+    nomeColaborador: col?.nomeCompleto,
+    detalhes: { mes: novo.mes, ano: novo.ano, fileName: novo.fileName }
+  });
+
   res.json(novo);
 });
 
 app.delete("/api/holerites/:id", (req, res) => {
   const db = loadDB();
   const { id } = req.params;
+  const hol = (db.holerites || []).find(h => h.id !== id);
+  const col = hol ? (db.colaboradores || []).find(c => c.matricula === hol.matricula) : null;
   db.holerites = (db.holerites || []).filter(h => h.id !== id);
   writeDB(db);
+
+  if (hol) {
+    recordAuditLog("Holerites", "Exclusão", `Excluiu holerite de pagamento referente a ${hol.mes}/${hol.ano} de ${col?.nomeCompleto || hol.matricula} (Matrícula: ${hol.matricula})`, {
+      usuario: getReqUser(req),
+      matricula: hol.matricula,
+      nomeColaborador: col?.nomeCompleto
+    });
+  }
+
   res.json({ success: true });
 });
 
@@ -947,20 +1236,41 @@ app.post("/api/sindicatos", (req, res) => {
   novo.id = novo.id || "SIND-" + Date.now();
   novo.dataUpload = novo.dataUpload || new Date().toISOString().split("T")[0];
 
+  const col = (db.colaboradores || []).find(c => c.matricula === novo.matricula);
+
   db.sindicatos = db.sindicatos || [];
   // Se já existe sindicato para a mesma matrícula, substitui
   db.sindicatos = db.sindicatos.filter(s => s.matricula !== novo.matricula);
   db.sindicatos.push(novo);
 
   writeDB(db);
+
+  recordAuditLog("Sindicatos", "Upload de Documento", `Anexou ficha cadastral sindical para ${col?.nomeCompleto || novo.matricula} (Matrícula: ${novo.matricula}) - Arquivo: ${novo.fileName}`, {
+    usuario: getReqUser(req),
+    matricula: novo.matricula,
+    nomeColaborador: col?.nomeCompleto,
+    detalhes: { fileName: novo.fileName }
+  });
+
   res.json(novo);
 });
 
 app.delete("/api/sindicatos/:id", (req, res) => {
   const db = loadDB();
   const { id } = req.params;
+  const sind = (db.sindicatos || []).find(s => s.id !== id);
+  const col = sind ? (db.colaboradores || []).find(c => c.matricula === sind.matricula) : null;
   db.sindicatos = (db.sindicatos || []).filter(s => s.id !== id);
   writeDB(db);
+
+  if (sind) {
+    recordAuditLog("Sindicatos", "Exclusão", `Excluiu ficha sindical de ${col?.nomeCompleto || sind.matricula} (Matrícula: ${sind.matricula})`, {
+      usuario: getReqUser(req),
+      matricula: sind.matricula,
+      nomeColaborador: col?.nomeCompleto
+    });
+  }
+
   res.json({ success: true });
 });
 
@@ -982,22 +1292,467 @@ app.post("/api/ferias", (req, res) => {
   novo.id = novo.id || "FER-" + Date.now();
   novo.dataCriacao = novo.dataCriacao || new Date().toISOString().split("T")[0];
 
+  const col = (db.colaboradores || []).find(c => c.matricula === novo.matricula);
+
   db.ferias = db.ferias || [];
   const idx = db.ferias.findIndex(f => f.id === novo.id);
-  if (idx >= 0) {
+  const isEdicao = idx >= 0;
+  if (isEdicao) {
     db.ferias[idx] = novo; // edição de lançamento existente
   } else {
     db.ferias.push(novo);
   }
 
   writeDB(db);
+
+  recordAuditLog(
+    "Férias",
+    isEdicao ? "Edição" : "Inclusão",
+    `${isEdicao ? "Atualizou" : "Lançou"} período de férias (${formatBrDateStr(novo.feriasInicio)} a ${formatBrDateStr(novo.feriasFim)}${novo.creditoFerias ? `, crédito: ${novo.creditoFerias}d` : ""}${novo.diasAbono ? `, ${novo.diasAbono}d abono` : ""}) para ${col?.nomeCompleto || novo.matricula} (Matrícula: ${novo.matricula})`,
+    {
+      usuario: getReqUser(req),
+      matricula: novo.matricula,
+      nomeColaborador: col?.nomeCompleto,
+      detalhes: { feriasInicio: novo.feriasInicio, feriasFim: novo.feriasFim, creditoFerias: novo.creditoFerias, diasAbono: novo.diasAbono, salarioBase: novo.salarioBase }
+    }
+  );
+
   res.json(novo);
 });
 
 app.delete("/api/ferias/:id", (req, res) => {
   const db = loadDB();
   const { id } = req.params;
-  db.ferias = (db.ferias || []).filter(f => f.id !== id);
+  const f = (db.ferias || []).find(item => item.id === id);
+  const col = f ? (db.colaboradores || []).find(c => c.matricula === f.matricula) : null;
+  db.ferias = (db.ferias || []).filter(item => item.id !== id);
+  writeDB(db);
+
+  if (f) {
+    recordAuditLog("Férias", "Exclusão", `Excluiu lançamento de férias (${formatBrDateStr(f.feriasInicio)} a ${formatBrDateStr(f.feriasFim)}) de ${col?.nomeCompleto || f.matricula} (Matrícula: ${f.matricula})`, {
+      usuario: getReqUser(req),
+      matricula: f.matricula,
+      nomeColaborador: col?.nomeCompleto
+    });
+  }
+
+  res.json({ success: true });
+});
+
+// ==========================================
+// MÓDULO À DISPOSIÇÃO (GESTÃO DE MOBILIZAÇÃO)
+// ==========================================
+
+app.get("/api/disponibilidades", (req, res) => {
+  const db = loadDB();
+  const hoje = new Date().toISOString().split("T")[0];
+  const list = (db.disponibilidades || []).map((item) => {
+    // Aplica a regra de ativação na data correta:
+    // Antes da data efetiva -> "Disponibilidade programada"
+    // A partir da data efetiva -> "À disposição" (a menos que já transferido, encerrado ou em negociação)
+    let statusVigente = item.status;
+    if (item.status === "Disponibilidade programada" || item.status === "À disposição") {
+      if (item.dataDisponibilidade && hoje < item.dataDisponibilidade) {
+        statusVigente = "Disponibilidade programada";
+      } else {
+        statusVigente = "À disposição";
+      }
+    }
+    return { ...item, status: statusVigente };
+  });
+
+  res.json(list);
+});
+
+app.post("/api/disponibilidades", (req, res) => {
+  const db = loadDB();
+  const novo: DisponibilidadeColaborador = req.body;
+
+  if (!novo.matricula || !novo.dataLiberacao || !novo.dataDisponibilidade || !novo.motivoLiberacao) {
+    return res.status(400).json({ error: "Matrícula, data de liberação, data de disponibilidade e motivo são obrigatórios." });
+  }
+
+  const col = (db.colaboradores || []).find((c) => c.matricula === novo.matricula);
+  if (!col) {
+    return res.status(404).json({ error: "Colaborador não encontrado com a matrícula informada." });
+  }
+
+  // Prevenção de duplicidade: verificar se já possui registro ativo
+  const duplicado = (db.disponibilidades || []).find(
+    (d) =>
+      d.matricula === novo.matricula &&
+      (d.status === "Disponibilidade programada" || d.status === "À disposição" || d.status === "Em negociação")
+  );
+
+  if (duplicado) {
+    return res.status(400).json({
+      error: `Este colaborador já possui registro de disponibilidade ativo (ID: ${duplicado.id}, Status: ${duplicado.status}). Conclua a transferência ou encerre o registro anterior antes de cadastrar uma nova liberação.`
+    });
+  }
+
+  const hoje = new Date().toISOString().split("T")[0];
+  const statusInicial = hoje < novo.dataDisponibilidade ? "Disponibilidade programada" : "À disposição";
+
+  novo.id = novo.id || "DISP-" + Date.now();
+  novo.nomeColaborador = novo.nomeColaborador || col.nomeCompleto;
+  novo.funcao = novo.funcao || col.funcao;
+  novo.projetoOrigem = novo.projetoOrigem || col.projetoAtual || "Sem Projeto";
+  novo.status = novo.status || statusInicial;
+  novo.responsavel = novo.responsavel || "Sistema";
+  novo.dataCriacao = novo.dataCriacao || new Date().toISOString();
+  novo.dataAtualizacao = new Date().toISOString();
+
+  novo.historico = novo.historico && novo.historico.length > 0 ? novo.historico : [
+    {
+      id: "HIST-" + Date.now(),
+      dataHora: new Date().toISOString(),
+      autor: novo.responsavel,
+      acao: "Cadastro de disponibilidade",
+      detalhe: `Liberação comunicada em ${novo.dataLiberacao}. Disponibilidade efetiva a partir de ${novo.dataDisponibilidade}. Motivo: ${novo.motivoLiberacao}`,
+      projetoOrigem: novo.projetoOrigem
+    }
+  ];
+
+  db.disponibilidades = db.disponibilidades || [];
+  db.disponibilidades.push(novo);
+
+  writeDB(db);
+
+  recordAuditLog("Disponibilidade", "Inclusão", `Cadastrou liberação para disponibilidade: ${novo.nomeColaborador} (Matrícula: ${novo.matricula}) - Projeto Origem: ${novo.projetoOrigem} - Motivo: ${novo.motivoLiberacao}`, {
+    usuario: novo.responsavel || getReqUser(req),
+    matricula: novo.matricula,
+    nomeColaborador: novo.nomeColaborador,
+    detalhes: { dataLiberacao: novo.dataLiberacao, dataDisponibilidade: novo.dataDisponibilidade, motivo: novo.motivoLiberacao }
+  });
+
+  res.json(novo);
+});
+
+app.put("/api/disponibilidades/:id", (req, res) => {
+  const db = loadDB();
+  const { id } = req.params;
+  const updateData: Partial<DisponibilidadeColaborador> = req.body;
+
+  db.disponibilidades = db.disponibilidades || [];
+  const idx = db.disponibilidades.findIndex((d) => d.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ error: "Registro de disponibilidade não encontrado." });
+  }
+
+  const atual = db.disponibilidades[idx];
+  const alteracoes: string[] = [];
+
+  if (updateData.status && updateData.status !== atual.status) {
+    alteracoes.push(`Status alterado de "${atual.status}" para "${updateData.status}"`);
+  }
+  if (updateData.dataDisponibilidade && updateData.dataDisponibilidade !== atual.dataDisponibilidade) {
+    alteracoes.push(`Data efetiva de disponibilidade alterada para ${updateData.dataDisponibilidade}`);
+  }
+  if (updateData.projetoDestino && updateData.projetoDestino !== atual.projetoDestino) {
+    alteracoes.push(`Projeto de destino: ${updateData.projetoDestino}`);
+  }
+  if (updateData.motivoLiberacao && updateData.motivoLiberacao !== atual.motivoLiberacao) {
+    alteracoes.push(`Motivo alterado para: ${updateData.motivoLiberacao}`);
+  }
+
+  const historicoAtualizado = [...(atual.historico || [])];
+  if (alteracoes.length > 0) {
+    historicoAtualizado.push({
+      id: "HIST-" + Date.now(),
+      dataHora: new Date().toISOString(),
+      autor: updateData.responsavel || atual.responsavel || "Sistema",
+      acao: "Atualização cadastral",
+      detalhe: alteracoes.join(" | "),
+      projetoOrigem: atual.projetoOrigem,
+      projetoDestino: updateData.projetoDestino || atual.projetoDestino
+    });
+  }
+
+  const atualizado: DisponibilidadeColaborador = {
+    ...atual,
+    ...updateData,
+    id: atual.id, // Preserva ID original
+    matricula: atual.matricula, // Preserva vínculo do colaborador
+    dataAtualizacao: new Date().toISOString(),
+    historico: historicoAtualizado
+  };
+
+  db.disponibilidades[idx] = atualizado;
+  writeDB(db);
+
+  recordAuditLog("Disponibilidade", "Edição", `Atualizou disponibilidade de ${atualizado.nomeColaborador || atual.matricula} (Matrícula: ${atual.matricula}): ${alteracoes.join(" | ") || "Atualização cadastral"}`, {
+    usuario: updateData.responsavel || getReqUser(req),
+    matricula: atual.matricula,
+    nomeColaborador: atualizado.nomeColaborador
+  });
+
+  res.json(atualizado);
+});
+
+app.post("/api/disponibilidades/:id/transferir", (req, res) => {
+  const db = loadDB();
+  const { id } = req.params;
+  const { projetoDestino, dataTransferencia, responsavel, observacao, atualizarProjetoColaborador } = req.body;
+
+  if (!projetoDestino || !dataTransferencia || !responsavel) {
+    return res.status(400).json({ error: "Projeto de destino, data da transferência e responsável são obrigatórios." });
+  }
+
+  db.disponibilidades = db.disponibilidades || [];
+  const idx = db.disponibilidades.findIndex((d) => d.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ error: "Registro de disponibilidade não encontrado." });
+  }
+
+  const atual = db.disponibilidades[idx];
+
+  const historicoAtualizado = [...(atual.historico || [])];
+  historicoAtualizado.push({
+    id: "HIST-" + Date.now(),
+    dataHora: new Date().toISOString(),
+    autor: responsavel,
+    acao: "Transferência efetivada",
+    detalhe: `Transferido com sucesso para o projeto "${projetoDestino}". Data: ${dataTransferencia}. ${observacao ? `Obs: ${observacao}` : ""}`,
+    projetoOrigem: atual.projetoOrigem,
+    projetoDestino: projetoDestino
+  });
+
+  const atualizado: DisponibilidadeColaborador = {
+    ...atual,
+    status: "Transferido",
+    projetoDestino,
+    dataTransferencia,
+    dataAtualizacao: new Date().toISOString(),
+    historico: historicoAtualizado
+  };
+
+  db.disponibilidades[idx] = atualizado;
+
+  // Atualiza também o projeto atual do colaborador para manter consistência operacional
+  if (atualizarProjetoColaborador !== false) {
+    const colIdx = (db.colaboradores || []).findIndex((c) => c.matricula === atual.matricula);
+    if (colIdx !== -1) {
+      db.colaboradores[colIdx].projetoAtual = projetoDestino;
+      db.colaboradores[colIdx].transferido = true;
+    }
+  }
+
+  writeDB(db);
+
+  recordAuditLog("Disponibilidade", "Transferência", `Efetivou transferência de ${atual.nomeColaborador || atual.matricula} (Matrícula: ${atual.matricula}) para o projeto "${projetoDestino}" em ${formatBrDateStr(dataTransferencia)}`, {
+    usuario: responsavel || getReqUser(req),
+    matricula: atual.matricula,
+    nomeColaborador: atual.nomeColaborador,
+    detalhes: { projetoDestino, dataTransferencia }
+  });
+
+  res.json(atualizado);
+});
+
+app.delete("/api/disponibilidades/:id", (req, res) => {
+  const db = loadDB();
+  const { id } = req.params;
+  const disp = (db.disponibilidades || []).find((d) => d.id === id);
+  db.disponibilidades = (db.disponibilidades || []).filter((d) => d.id !== id);
+  writeDB(db);
+
+  if (disp) {
+    recordAuditLog("Disponibilidade", "Exclusão", `Excluiu registro de disponibilidade de ${disp.nomeColaborador || disp.matricula} (Matrícula: ${disp.matricula})`, {
+      usuario: getReqUser(req),
+      matricula: disp.matricula,
+      nomeColaborador: disp.nomeColaborador
+    });
+  }
+
+  res.json({ success: true });
+});
+
+// ==========================================
+// MÓDULO OBSERVAÇÕES INTELIGENTES
+// ==========================================
+
+app.get("/api/observacoes", (req, res) => {
+  const db = loadDB();
+  const obs = [...(db.observacoes || [])].sort((a, b) => {
+    return new Date(b.dataHora).getTime() - new Date(a.dataHora).getTime();
+  });
+  res.json(obs);
+});
+
+app.post("/api/observacoes", (req, res) => {
+  const db = loadDB();
+  const nova: ObservacaoColaborador = req.body;
+
+  if (!nova.matricula || !nova.conteudo || !nova.conteudo.trim()) {
+    return res.status(400).json({ error: "Matrícula do colaborador e conteúdo da observação são obrigatórios." });
+  }
+
+  const col = (db.colaboradores || []).find((c) => c.matricula === nova.matricula);
+
+  nova.id = nova.id || "OBS-" + Date.now();
+  nova.nomeColaborador = nova.nomeColaborador || col?.nomeCompleto || nova.matricula;
+  nova.funcao = nova.funcao || col?.funcao || "-";
+  nova.projeto = nova.projeto || col?.projetoAtual || "-";
+  nova.categoriaSugerida = nova.categoriaSugerida || nova.categoriaConfirmada || "Outros";
+  nova.categoriaConfirmada = nova.categoriaConfirmada || nova.categoriaSugerida || "Outros";
+  nova.autor = nova.autor || getReqUser(req) || "Sistema";
+  nova.dataHora = nova.dataHora || new Date().toISOString();
+  nova.dataHoraAtualizacao = new Date().toISOString();
+
+  nova.historicoAlteracoes = [
+    {
+      dataHora: new Date().toISOString(),
+      autor: nova.autor,
+      alteracao: "Registro inicial da observação",
+      categoriaNova: nova.categoriaConfirmada
+    }
+  ];
+
+  db.observacoes = db.observacoes || [];
+  db.observacoes.unshift(nova);
+
+  writeDB(db);
+
+  recordAuditLog("Observações", "Inclusão", `Registrou nova observação (${nova.categoriaConfirmada}) para ${nova.nomeColaborador} (Matrícula: ${nova.matricula}): "${nova.conteudo.slice(0, 70)}${nova.conteudo.length > 70 ? "..." : ""}"`, {
+    usuario: nova.autor,
+    matricula: nova.matricula,
+    nomeColaborador: nova.nomeColaborador,
+    detalhes: { categoria: nova.categoriaConfirmada }
+  });
+
+  res.json(nova);
+});
+
+app.put("/api/observacoes/:id", (req, res) => {
+  const db = loadDB();
+  const { id } = req.params;
+  const updateData: Partial<ObservacaoColaborador> = req.body;
+
+  db.observacoes = db.observacoes || [];
+  const idx = db.observacoes.findIndex((o) => o.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ error: "Observação não encontrada." });
+  }
+
+  const atual = db.observacoes[idx];
+  const historico = [...(atual.historicoAlteracoes || [])];
+
+  historico.push({
+    dataHora: new Date().toISOString(),
+    autor: updateData.autor || getReqUser(req) || "Sistema",
+    alteracao: req.body.descricaoAlteracao || "Edição de conteúdo ou categoria",
+    categoriaAnterior: atual.categoriaConfirmada,
+    categoriaNova: updateData.categoriaConfirmada || atual.categoriaConfirmada
+  });
+
+  const atualizada: ObservacaoColaborador = {
+    ...atual,
+    ...updateData,
+    id: atual.id, // Preserva ID
+    matricula: atual.matricula, // Preserva vínculo
+    dataHoraAtualizacao: new Date().toISOString(),
+    historicoAlteracoes: historico
+  };
+
+  db.observacoes[idx] = atualizada;
+  writeDB(db);
+
+  recordAuditLog("Observações", "Edição", `Editou observação (${atualizada.categoriaConfirmada}) de ${atual.nomeColaborador} (Matrícula: ${atual.matricula}): ${req.body.descricaoAlteracao || "Conteúdo ou categoria alterados"}`, {
+    usuario: updateData.autor || getReqUser(req),
+    matricula: atual.matricula,
+    nomeColaborador: atual.nomeColaborador
+  });
+
+  res.json(atualizada);
+});
+
+app.delete("/api/observacoes/:id", (req, res) => {
+  const db = loadDB();
+  const { id } = req.params;
+  const obs = (db.observacoes || []).find((o) => o.id === id);
+  db.observacoes = (db.observacoes || []).filter((o) => o.id !== id);
+  writeDB(db);
+
+  if (obs) {
+    recordAuditLog("Observações", "Exclusão", `Excluiu observação de ${obs.nomeColaborador || obs.matricula} (Matrícula: ${obs.matricula})`, {
+      usuario: getReqUser(req),
+      matricula: obs.matricula,
+      nomeColaborador: obs.nomeColaborador
+    });
+  }
+
+  res.json({ success: true });
+});
+
+// ==========================================
+// CONFIGURAÇÃO DE CUSTOS (PARÂMETROS)
+// ==========================================
+
+app.get("/api/config-custos", (req, res) => {
+  const db = loadDB();
+  const cfg = db.configuracaoCustos || {
+    id: "default",
+    encargosAdicionaisPct: 0,
+    beneficiosMensalPadrao: 800,
+    outrosCustosMensalPadrao: 400,
+    salarioBasePadraoFallback: 0
+  };
+  res.json(cfg);
+});
+
+app.post("/api/config-custos", (req, res) => {
+  const db = loadDB();
+  const novoCfg: ConfiguracaoCustos = {
+    id: "default",
+    encargosAdicionaisPct: Number(req.body.encargosAdicionaisPct) || 0,
+    beneficiosMensalPadrao: Number(req.body.beneficiosMensalPadrao) || 0,
+    outrosCustosMensalPadrao: Number(req.body.outrosCustosMensalPadrao) || 0,
+    salarioBasePadraoFallback: Number(req.body.salarioBasePadraoFallback) || 0,
+    atualizadoEm: new Date().toISOString(),
+    atualizadoPor: req.body.atualizadoPor || getReqUser(req) || "Sistema"
+  };
+
+  db.configuracaoCustos = novoCfg;
+  writeDB(db);
+
+  recordAuditLog("Configurações", "Edição", `Atualizou configurações globais de custos de mobilização (Encargos adicionais: ${novoCfg.encargosAdicionaisPct}%, Benefícios: R$ ${novoCfg.beneficiosMensalPadrao})`, {
+    usuario: novoCfg.atualizadoPor
+  });
+
+  res.json(novoCfg);
+});
+
+// ==========================================
+// MÓDULO LOGS E AUDITORIA DO SISTEMA
+// ==========================================
+
+app.get("/api/logs", (req, res) => {
+  const db = loadDB();
+  const logs = [...(db.logs || [])].sort((a, b) => {
+    return new Date(b.dataHora).getTime() - new Date(a.dataHora).getTime();
+  });
+  res.json(logs);
+});
+
+app.post("/api/logs", (req, res) => {
+  const { modulo, acao, descricao, matricula, nomeColaborador, detalhes } = req.body;
+  if (!modulo || !acao || !descricao) {
+    return res.status(400).json({ error: "Módulo, ação e descrição são obrigatórios." });
+  }
+  const usuario = getReqUser(req);
+  const log = recordAuditLog(modulo, acao, descricao, {
+    usuario,
+    matricula,
+    nomeColaborador,
+    detalhes
+  });
+  res.json(log);
+});
+
+app.delete("/api/logs/:id", (req, res) => {
+  const db = loadDB();
+  const { id } = req.params;
+  db.logs = (db.logs || []).filter(l => l.id !== id);
   writeDB(db);
   res.json({ success: true });
 });

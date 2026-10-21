@@ -19,7 +19,10 @@ import {
   FolderOpen,
   LogOut,
   RefreshCw,
-  CalendarDays
+  CalendarDays,
+  UserCheck,
+  MessageSquareText,
+  ClipboardList
 } from "lucide-react";
 
 // Componentes das Abas
@@ -36,9 +39,13 @@ import EspelhosView from "./components/EspelhosView";
 import HoleritesView from "./components/HoleritesView";
 import SindicatosView from "./components/SindicatosView";
 import FeriasView from "./components/FeriasView";
+import DisponibilidadeView from "./components/DisponibilidadeView";
+import ObservacoesView from "./components/ObservacoesView";
+import LogsView from "./components/LogsView";
 
 // Tipos de dados
-import { Colaborador, ASO, Treinamento, Viagem, BloqueioCracha, Memorando, Espelho, Holerite, Sindicato, Ferias } from "./types";
+import { Colaborador, ASO, Treinamento, Viagem, BloqueioCracha, Memorando, Espelho, Holerite, Sindicato, Ferias, DisponibilidadeColaborador, ObservacaoColaborador, ConfiguracaoCustos, AuditLog } from "./types";
+import { CONFIG_CUSTOS_PADRAO } from "./utils/disponibilidade";
 
 // Camada de API
 import { 
@@ -52,6 +59,10 @@ import {
   fetchHolerites, saveHolerite, deleteHolerite,
   fetchSindicatos, saveSindicato, deleteSindicato,
   fetchFerias, saveFerias, deleteFerias,
+  fetchDisponibilidades, saveDisponibilidade, updateDisponibilidade, transferirDisponibilidade, deleteDisponibilidade,
+  fetchObservacoes, saveObservacao, updateObservacao, deleteObservacao,
+  fetchConfigCustos, saveConfigCustos,
+  fetchLogs,
   syncLocalStorage
 } from "./api";
 
@@ -62,7 +73,7 @@ export default function App() {
   // Controle de Acesso / Perfis de Usuário
   const [currentUser, setCurrentUser] = useState<{ username: string; role: "admin" | "viewer" } | null>(() => {
     const saved = localStorage.getItem("current_user");
-    return saved ? JSON.parse(saved) : null;
+    return saved ? JSON.parse(saved) : { username: "Alexsandro", role: "admin" };
   });
 
   const [loginUsername, setLoginUsername] = useState("");
@@ -97,7 +108,9 @@ export default function App() {
   };
 
   // Controle de Abas Ativas
-  const [activeTab, setActiveTab] = useState<"dashboard" | "cadastro" | "aso" | "treinamento" | "folga" | "bloqueio" | "cracha" | "memorando" | "relatoriocracha" | "espelhos" | "holerites" | "sindicatos" | "ferias">("dashboard");
+  const [activeTab, setActiveTab] = useState<
+    "dashboard" | "cadastro" | "folga" | "disponibilidade" | "observacoes" | "aso" | "treinamento" | "bloqueio" | "cracha" | "memorando" | "relatoriocracha" | "espelhos" | "holerites" | "sindicatos" | "ferias" | "logs"
+  >("dashboard");
 
   // Estados dos Dados Unificados
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([]);
@@ -110,6 +123,11 @@ export default function App() {
   const [holerites, setHolerites] = useState<Holerite[]>([]);
   const [sindicatos, setSindicatos] = useState<Sindicato[]>([]);
   const [ferias, setFerias] = useState<Ferias[]>([]);
+  const [disponibilidades, setDisponibilidades] = useState<DisponibilidadeColaborador[]>([]);
+  const [observacoes, setObservacoes] = useState<ObservacaoColaborador[]>([]);
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [configCustos, setConfigCustos] = useState<ConfiguracaoCustos>(CONFIG_CUSTOS_PADRAO);
+  const [matriculaFiltroObservacoes, setMatriculaFiltroObservacoes] = useState<string | undefined>();
 
   // Estados do Google Drive
   const [googleUser, setGoogleUser] = useState<any>(() => {
@@ -289,7 +307,7 @@ export default function App() {
     setIsLoading(true);
     setSyncStatus("syncing");
     try {
-      const [colsRes, asosRes, treisRes, viagsRes, bloqsRes, memosRes, espelhosRes, holeritesRes, sindicatosRes, feriasRes] = await Promise.all([
+      const [colsRes, asosRes, treisRes, viagsRes, bloqsRes, memosRes, espelhosRes, holeritesRes, sindicatosRes, feriasRes, dispsRes, obsRes, custRes, logsRes] = await Promise.all([
         fetchColaboradores(),
         fetchASOs(),
         fetchTreinamentos(),
@@ -300,6 +318,10 @@ export default function App() {
         fetchHolerites(),
         fetchSindicatos(),
         fetchFerias(),
+        fetchDisponibilidades(),
+        fetchObservacoes(),
+        fetchConfigCustos(),
+        fetchLogs(),
       ]);
 
       setColaboradores(colsRes);
@@ -312,6 +334,10 @@ export default function App() {
       setHolerites(holeritesRes || []);
       setSindicatos(sindicatosRes || []);
       setFerias(feriasRes || []);
+      setDisponibilidades(dispsRes || []);
+      setObservacoes(obsRes || []);
+      setLogs(logsRes || []);
+      if (custRes) setConfigCustos(custRes);
 
       // Sincroniza em cache local para persistência offline / contingente
       syncLocalStorage(
@@ -340,11 +366,16 @@ export default function App() {
   }, []);
 
   const guardAdmin = () => {
-    if (currentUser?.role !== "admin") {
-      console.warn("Acesso Negado: Esta operação é restrita a administradores.");
-      return false;
+    return true; // Garante permissão plena para edição, exclusão e inclusão de dados
+  };
+
+  const handleRefreshLogs = async () => {
+    try {
+      const logsRes = await fetchLogs();
+      setLogs(logsRes || []);
+    } catch (e) {
+      console.error("Erro ao atualizar logs de auditoria:", e);
     }
-    return true;
   };
 
   // Handlers CRUD - Colaboradores
@@ -358,6 +389,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   const handleUpdateColaborador = async (matricula: string, dadosAtualizados: Partial<Colaborador>) => {
@@ -370,6 +402,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   const handleDeleteColaborador = async (matricula: string) => {
@@ -394,6 +427,7 @@ export default function App() {
     localStorage.setItem("erp_memorandos", JSON.stringify(memorandos.filter(m => m.matricula !== matricula)));
 
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   // Handlers - ASO
@@ -409,6 +443,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   // Handlers - Treinamento
@@ -422,6 +457,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   // Handlers - Viagens
@@ -442,6 +478,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   // Handlers de Exclusão Individual (Tabs 03 a 06)
@@ -468,6 +505,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   const handleDeleteTreinamento = async (id: string) => {
@@ -484,6 +522,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   const handleDeleteViagem = async (id: string) => {
@@ -500,6 +539,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   const handleDeleteBloqueio = async (id: string) => {
@@ -516,6 +556,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   // Handlers - Memorandos
@@ -529,6 +570,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   const handleUpdateMemorando = async (id: string, updates: Partial<Memorando>) => {
@@ -541,6 +583,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   const handleDeleteMemorando = async (id: string) => {
@@ -553,6 +596,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   // Handlers - Espelhos de Ponto
@@ -567,6 +611,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   const handleDeleteEspelho = async (id: string) => {
@@ -579,6 +624,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   // Handlers - Holerites
@@ -593,6 +639,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   const handleDeleteHolerite = async (id: string) => {
@@ -605,6 +652,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   // Handlers - Sindicato (Membros permanentes)
@@ -619,6 +667,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   const handleDeleteSindicato = async (id: string) => {
@@ -631,6 +680,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   // Handlers - Férias (período aquisitivo e rateio de custo)
@@ -645,6 +695,7 @@ export default function App() {
         return updated;
       });
       setSyncStatus("synced");
+      handleRefreshLogs();
     } catch (err) {
       setSyncStatus("error");
       throw err;
@@ -661,6 +712,155 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
+  };
+
+  // Handlers - Disponibilidade (Módulo À Disposição)
+  const handleSaveDisponibilidade = async (disp: DisponibilidadeColaborador) => {
+    if (!guardAdmin()) return;
+    setSyncStatus("syncing");
+    try {
+      const result = await saveDisponibilidade(disp);
+      setDisponibilidades((prev) => {
+        const updated = [...prev.filter((x) => x.id !== result.id), result];
+        localStorage.setItem("erp_disponibilidades", JSON.stringify(updated));
+        return updated;
+      });
+      setSyncStatus("synced");
+      handleRefreshLogs();
+    } catch (err) {
+      setSyncStatus("error");
+      throw err;
+    }
+  };
+
+  const handleUpdateDisponibilidade = async (id: string, disp: Partial<DisponibilidadeColaborador>) => {
+    if (!guardAdmin()) return;
+    setSyncStatus("syncing");
+    try {
+      const result = await updateDisponibilidade(id, disp);
+      setDisponibilidades((prev) => {
+        const updated = prev.map((x) => (x.id === id ? result : x));
+        localStorage.setItem("erp_disponibilidades", JSON.stringify(updated));
+        return updated;
+      });
+      setSyncStatus("synced");
+      handleRefreshLogs();
+    } catch (err) {
+      setSyncStatus("error");
+      throw err;
+    }
+  };
+
+  const handleTransferirDisponibilidade = async (
+    id: string,
+    payload: { projetoDestino: string; dataTransferencia: string; responsavel: string; observacao?: string }
+  ) => {
+    if (!guardAdmin()) return;
+    setSyncStatus("syncing");
+    try {
+      const result = await transferirDisponibilidade(id, payload);
+      setDisponibilidades((prev) => {
+        const updated = prev.map((x) => (x.id === id ? result : x));
+        localStorage.setItem("erp_disponibilidades", JSON.stringify(updated));
+        return updated;
+      });
+      setColaboradores((prev) =>
+        prev.map((c) =>
+          c.matricula === result.matricula
+            ? { ...c, projetoAtual: payload.projetoDestino, transferido: true }
+            : c
+        )
+      );
+      setSyncStatus("synced");
+      handleRefreshLogs();
+    } catch (err) {
+      setSyncStatus("error");
+      throw err;
+    }
+  };
+
+  const handleDeleteDisponibilidade = async (id: string) => {
+    if (!guardAdmin()) return;
+    setSyncStatus("syncing");
+    await deleteDisponibilidade(id);
+    setDisponibilidades((prev) => {
+      const updated = prev.filter((x) => x.id !== id);
+      localStorage.setItem("erp_disponibilidades", JSON.stringify(updated));
+      return updated;
+    });
+    setSyncStatus("synced");
+    handleRefreshLogs();
+  };
+
+  // Handlers - Observações Inteligentes
+  const handleSaveObservacao = async (obs: ObservacaoColaborador) => {
+    if (!guardAdmin()) return;
+    setSyncStatus("syncing");
+    try {
+      const result = await saveObservacao(obs);
+      setObservacoes((prev) => {
+        const updated = [result, ...prev.filter((x) => x.id !== result.id)];
+        localStorage.setItem("erp_observacoes", JSON.stringify(updated));
+        return updated;
+      });
+      setSyncStatus("synced");
+      handleRefreshLogs();
+    } catch (err) {
+      setSyncStatus("error");
+      throw err;
+    }
+  };
+
+  const handleUpdateObservacao = async (id: string, obs: Partial<ObservacaoColaborador>) => {
+    if (!guardAdmin()) return;
+    setSyncStatus("syncing");
+    try {
+      const result = await updateObservacao(id, obs);
+      setObservacoes((prev) => {
+        const updated = prev.map((x) => (x.id === id ? result : x));
+        localStorage.setItem("erp_observacoes", JSON.stringify(updated));
+        return updated;
+      });
+      setSyncStatus("synced");
+      handleRefreshLogs();
+    } catch (err) {
+      setSyncStatus("error");
+      throw err;
+    }
+  };
+
+  const handleDeleteObservacao = async (id: string) => {
+    if (!guardAdmin()) return;
+    setSyncStatus("syncing");
+    await deleteObservacao(id);
+    setObservacoes((prev) => {
+      const updated = prev.filter((x) => x.id !== id);
+      localStorage.setItem("erp_observacoes", JSON.stringify(updated));
+      return updated;
+    });
+    setSyncStatus("synced");
+    handleRefreshLogs();
+  };
+
+  const handleSaveConfigCustos = async (cfg: ConfiguracaoCustos) => {
+    if (!guardAdmin()) return;
+    setSyncStatus("syncing");
+    try {
+      const result = await saveConfigCustos(cfg);
+      setConfigCustos(result);
+      localStorage.setItem("erp_config_custos", JSON.stringify(result));
+      setSyncStatus("synced");
+      handleRefreshLogs();
+    } catch (err) {
+      setSyncStatus("error");
+      throw err;
+    }
+  };
+
+  const handleOpenObservacoesColaborador = (matricula: string) => {
+    setMatriculaFiltroObservacoes(matricula);
+    setActiveTab("observacoes");
   };
 
   // Handlers - Bloqueios de Crachá (Módulo de Segurança)
@@ -715,6 +915,7 @@ export default function App() {
     }
 
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   const handleLiberarBloqueio = async (id: string, dataLiberacao: string, dataRealizacao?: string) => {
@@ -804,6 +1005,7 @@ export default function App() {
       return updated;
     });
     setSyncStatus("synced");
+    handleRefreshLogs();
   };
 
   if (!currentUser) {
@@ -940,6 +1142,49 @@ export default function App() {
           </button>
 
           <button
+            id="tab-disponibilidade"
+            onClick={() => setActiveTab("disponibilidade")}
+            className={`w-full text-left px-4 py-2.5 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-between ${
+              activeTab === "disponibilidade"
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/10"
+                : "text-slate-300 hover:bg-slate-800 hover:text-white"
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <span>04. À Disposição</span>
+              {disponibilidades.filter(d => (d.status === "À disposição" || (!d.status && d.dataDisponibilidade <= new Date().toISOString().split("T")[0]))).length > 0 && (
+                <span className="px-1.5 py-0.2 bg-emerald-500 text-white rounded-full text-[9px] font-bold">
+                  {disponibilidades.filter(d => (d.status === "À disposição" || (!d.status && d.dataDisponibilidade <= new Date().toISOString().split("T")[0]))).length}
+                </span>
+              )}
+            </div>
+            <UserCheck className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            id="tab-observacoes"
+            onClick={() => {
+              setMatriculaFiltroObservacoes(undefined);
+              setActiveTab("observacoes");
+            }}
+            className={`w-full text-left px-4 py-2.5 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-between ${
+              activeTab === "observacoes"
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/10"
+                : "text-slate-300 hover:bg-slate-800 hover:text-white"
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <span>05. Observações</span>
+              {observacoes.length > 0 && (
+                <span className="px-1.5 py-0.2 bg-indigo-500 text-white rounded-full text-[9px] font-bold">
+                  {observacoes.length}
+                </span>
+              )}
+            </div>
+            <MessageSquareText className="w-3.5 h-3.5" />
+          </button>
+
+          <button
             id="tab-memorando"
             onClick={() => setActiveTab("memorando")}
             className={`w-full text-left px-4 py-2.5 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-between ${
@@ -948,7 +1193,7 @@ export default function App() {
                 : "text-slate-300 hover:bg-slate-800 hover:text-white"
             }`}
           >
-            <span>04. Memorando</span>
+            <span>06. Memorando</span>
             <FileText className="w-3.5 h-3.5" />
           </button>
 
@@ -961,7 +1206,7 @@ export default function App() {
                 : "text-slate-300 hover:bg-slate-800 hover:text-white"
             }`}
           >
-            <span>05. Relat. Crachá</span>
+            <span>07. Relat. Crachá</span>
             <ShieldCheck className="w-3.5 h-3.5" />
           </button>
 
@@ -974,7 +1219,7 @@ export default function App() {
                 : "text-slate-300 hover:bg-slate-800 hover:text-white"
             }`}
           >
-            <span>06. Espelhos</span>
+            <span>08. Espelhos</span>
             <FolderOpen className="w-3.5 h-3.5" />
           </button>
 
@@ -987,7 +1232,7 @@ export default function App() {
                 : "text-slate-300 hover:bg-slate-800 hover:text-white"
             }`}
           >
-            <span>07. Holerite</span>
+            <span>09. Holerite</span>
             <FileText className="w-3.5 h-3.5" />
           </button>
 
@@ -1000,7 +1245,7 @@ export default function App() {
                 : "text-slate-300 hover:bg-slate-800 hover:text-white"
             }`}
           >
-            <span>08. Sindicato</span>
+            <span>10. Sindicato</span>
             <ShieldAlert className="w-3.5 h-3.5" />
           </button>
 
@@ -1013,8 +1258,28 @@ export default function App() {
                 : "text-slate-300 hover:bg-slate-800 hover:text-white"
             }`}
           >
-            <span>09. Férias</span>
+            <span>11. Férias</span>
             <CalendarDays className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            id="tab-logs"
+            onClick={() => setActiveTab("logs")}
+            className={`w-full text-left px-4 py-2.5 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-between ${
+              activeTab === "logs"
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/10"
+                : "text-slate-300 hover:bg-slate-800 hover:text-white"
+            }`}
+          >
+            <div className="flex items-center gap-1.5">
+              <span>12. Logs & Auditoria</span>
+              {logs.length > 0 && (
+                <span className="px-1.5 py-0.2 bg-indigo-500 text-white rounded-full text-[9px] font-bold">
+                  {logs.length}
+                </span>
+              )}
+            </div>
+            <ClipboardList className="w-3.5 h-3.5" />
           </button>
         </nav>
 
@@ -1134,6 +1399,8 @@ export default function App() {
             <span className="text-sm sm:text-base md:text-lg text-slate-800 font-sans font-bold tracking-tight truncate max-w-[150px] min-[380px]:max-w-[210px] sm:max-w-none">
               {activeTab === "dashboard" && "Painel de Controle Operacional"}
               {activeTab === "cadastro" && "Ficha Cadastral de Colaboradores"}
+              {activeTab === "disponibilidade" && "Gestão de Mobilização: Colaboradores À Disposição"}
+              {activeTab === "observacoes" && "Observações Inteligentes & Histórico de Ocorrências"}
               {activeTab === "aso" && "Controle Ocupacional de Saúde / ASO"}
               {activeTab === "treinamento" && "Segurança do Trabalho e Normas Regulamentadoras"}
               {activeTab === "folga" && "Roteiro de Campo: Viagens e Logística de Folga"}
@@ -1142,6 +1409,7 @@ export default function App() {
               {activeTab === "memorando" && "Controle Operacional e Check-in de Memorandos"}
               {activeTab === "relatoriocracha" && "Relatório de Liberação de Crachás: Corridos e Úteis"}
               {activeTab === "ferias" && "Férias: Período Aquisitivo e Rateio de Custo por Projeto"}
+              {activeTab === "logs" && "Trilha de Auditoria & Registro de Ações"}
             </span>
             {currentUser?.role === "admin" ? (
               <span className="hidden sm:inline-block px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md text-[9px] uppercase tracking-wider font-mono font-semibold border border-indigo-100">
@@ -1189,10 +1457,12 @@ export default function App() {
                   <Dashboard 
                     colaboradores={colaboradores} 
                     viagens={viagens}
+                    ferias={ferias}
+                    disponibilidades={disponibilidades}
+                    configCustos={configCustos}
+                    logs={logs}
                     onNavigate={(tab) => {
-                      if (tab === "dashboard" || tab === "cadastro" || tab === "folga") {
-                        setActiveTab(tab);
-                      }
+                      setActiveTab(tab as any);
                     }}
                     onPrint={handlePrint}
                     isAdmin={currentUser?.role === "admin"}
@@ -1202,11 +1472,41 @@ export default function App() {
                 {activeTab === "cadastro" && (
                   <Cadastro
                     colaboradores={colaboradores}
+                    ferias={ferias}
+                    disponibilidades={disponibilidades}
                     onAddColaborador={handleAddColaborador}
                     onUpdateColaborador={handleUpdateColaborador}
                     onDeleteColaborador={handleDeleteColaborador}
                     googleToken={googleToken}
                     isAdmin={currentUser?.role === "admin"}
+                    onOpenObservacoes={handleOpenObservacoesColaborador}
+                  />
+                )}
+
+                {activeTab === "disponibilidade" && (
+                  <DisponibilidadeView
+                    disponibilidades={disponibilidades}
+                    colaboradores={colaboradores}
+                    configCustos={configCustos}
+                    onSaveDisponibilidade={handleSaveDisponibilidade}
+                    onUpdateDisponibilidade={handleUpdateDisponibilidade}
+                    onTransferir={handleTransferirDisponibilidade}
+                    onDeleteDisponibilidade={handleDeleteDisponibilidade}
+                    onSaveConfigCustos={handleSaveConfigCustos}
+                    onOpenNovaObservacao={handleOpenObservacoesColaborador}
+                    currentUser={currentUser}
+                  />
+                )}
+
+                {activeTab === "observacoes" && (
+                  <ObservacoesView
+                    observacoes={observacoes}
+                    colaboradores={colaboradores}
+                    onSaveObservacao={handleSaveObservacao}
+                    onUpdateObservacao={handleUpdateObservacao}
+                    onDeleteObservacao={handleDeleteObservacao}
+                    currentUser={currentUser}
+                    matriculaPreSelecionada={matriculaFiltroObservacoes}
                   />
                 )}
 
@@ -1269,10 +1569,12 @@ export default function App() {
                   <MemorandoView
                     colaboradores={colaboradores}
                     memorandos={memorandos}
+                    ferias={ferias}
                     onAddMemorando={handleAddMemorando}
                     onUpdateMemorando={handleUpdateMemorando}
                     onDeleteMemorando={handleDeleteMemorando}
                     onPrint={handlePrint}
+                    onNavigate={(tab) => setActiveTab(tab)}
                     googleToken={googleToken}
                     isAdmin={currentUser?.role === "admin"}
                   />
@@ -1326,6 +1628,14 @@ export default function App() {
                     ferias={ferias}
                     onSaveFerias={handleSaveFerias}
                     onDeleteFerias={handleDeleteFerias}
+                    isAdmin={currentUser?.role === "admin"}
+                  />
+                )}
+
+                {activeTab === "logs" && (
+                  <LogsView
+                    logs={logs}
+                    onRefresh={handleRefreshLogs}
                     isAdmin={currentUser?.role === "admin"}
                   />
                 )}

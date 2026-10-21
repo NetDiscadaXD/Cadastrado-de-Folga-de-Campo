@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { Colaborador, Holerite } from "../types";
 import { getOrCreateFolderHierarchy, uploadFileToDrive } from "../lib/googleAuth";
+import { verificarElegibilidadeDocumentoMes } from "../utils/colaboradorStatus";
 import JSZip from "jszip";
 
 interface HoleritesViewProps {
@@ -82,17 +83,76 @@ export default function HoleritesView({
     return map;
   }, [holerites, selectedMonth, selectedYear]);
 
+  // Mapeamento de elegibilidade e regras de cobrança (mobilização e desmobilização)
+  const elegibilidadeMap = useMemo(() => {
+    const map: Record<string, ReturnType<typeof verificarElegibilidadeDocumentoMes>> = {};
+    colaboradores.forEach(c => {
+      map[c.matricula] = verificarElegibilidadeDocumentoMes(c, selectedMonth, selectedYear);
+    });
+    return map;
+  }, [colaboradores, selectedMonth, selectedYear]);
+
+  // Métricas analíticas do período para Holerites
+  const metricasCobranca = useMemo(() => {
+    let aCobrar = 0;
+    let pendentes = 0;
+    let anexados = 0;
+    let naoMobilizados = 0;
+    let desmobilizados = 0;
+    let isentos = 0;
+
+    colaboradores.forEach(c => {
+      const eleg = elegibilidadeMap[c.matricula];
+      const hol = holeriteMap[c.matricula];
+
+      if (hol && !hol.tipoIsencao) {
+        anexados++;
+      } else if (hol && hol.tipoIsencao) {
+        isentos++;
+      }
+
+      if (eleg?.statusCobranca === 'nao_mobilizado') {
+        naoMobilizados++;
+      } else if (eleg?.statusCobranca === 'desmobilizado') {
+        desmobilizados++;
+      } else if (eleg?.cobrar) {
+        aCobrar++;
+        if (!hol) {
+          pendentes++;
+        }
+      }
+    });
+
+    return { aCobrar, pendentes, anexados, naoMobilizados, desmobilizados, isentos };
+  }, [colaboradores, elegibilidadeMap, holeriteMap]);
+
   // Check active filter list of employees
   const filteredEmployees = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
-    let list = colaboradores.filter(c => c.status !== "Inativo");
+    // Exibe colaboradores que estiveram ativos no período ou que possuem holerite anexado
+    let list = colaboradores.filter(c => {
+      const eleg = elegibilidadeMap[c.matricula];
+      const hol = holeriteMap[c.matricula];
+      // Se não tem holerite e foi desmobilizado antes do período, só exibe se o filtro específico for solicitado
+      if (!hol && eleg?.statusCobranca === 'desmobilizado' && statusFilter !== 'desmobilizado' && statusFilter !== 'todos') {
+        return false;
+      }
+      return true;
+    });
 
     if (statusFilter !== "todos") {
       list = list.filter(c => {
         const hol = holeriteMap[c.matricula];
-        if (statusFilter === "pendente") return !hol;
+        const eleg = elegibilidadeMap[c.matricula];
+
+        if (statusFilter === "a_cobrar") return eleg?.cobrar;
+        if (statusFilter === "pendente") return eleg?.cobrar && !hol;
         if (statusFilter === "anexado") return hol && !hol.tipoIsencao;
-        if (statusFilter === "isento") return hol && !!hol.tipoIsencao;
+        if (statusFilter === "nao_mobilizado") return eleg?.statusCobranca === 'nao_mobilizado';
+        if (statusFilter === "desmobilizado") return eleg?.statusCobranca === 'desmobilizado';
+        if (statusFilter === "nao_recebe_holerite") return hol && hol.tipoIsencao === "nao_recebe_holerite";
+        if (statusFilter === "admitido_no_mes") return hol && hol.tipoIsencao === "admitido_no_mes";
+        if (statusFilter === "isento") return (hol && !!hol.tipoIsencao) || !eleg?.cobrar;
         return true;
       });
     }
@@ -105,7 +165,7 @@ export default function HoleritesView({
     );
     // Sort alphabetically by full name
     return [...matched].sort((a, b) => a.nomeCompleto.localeCompare(b.nomeCompleto, "pt-BR"));
-  }, [colaboradores, searchTerm, statusFilter, holeriteMap]);
+  }, [colaboradores, searchTerm, statusFilter, holeriteMap, elegibilidadeMap]);
 
   // Batch Selection utilities
   const handleToggleSelectRow = (matricula: string) => {
@@ -556,18 +616,30 @@ export default function HoleritesView({
         </div>
 
         {/* Dynamic Metric Cards */}
-        <div className="flex items-center gap-3 self-stretch md:self-auto">
-          <div className="flex-1 md:flex-none border border-[#141414]/10 px-4 py-2 font-mono text-center md:text-left">
-            <span className="block text-[10px] text-neutral-400 font-bold uppercase">Cadastrados</span>
-            <span className="text-base font-extrabold text-slate-700">{totalEmployeesCount}</span>
+        <div className="flex items-center flex-wrap gap-2.5 self-stretch md:self-auto">
+          <div className="flex-1 md:flex-none border border-indigo-200 bg-indigo-50/40 px-3 py-1.5 font-mono text-center md:text-left rounded-md">
+            <span className="block text-[9px] text-indigo-700 font-bold uppercase">A Cobrar</span>
+            <span className="text-sm font-extrabold text-indigo-950">{metricasCobranca.aCobrar}</span>
           </div>
-          <div className="flex-1 md:flex-none border border-emerald-200 bg-emerald-50/20 px-4 py-2 font-mono text-center md:text-left">
-            <span className="block text-[10px] text-emerald-600 font-bold uppercase">Concluídos/Isentos</span>
-            <span className="text-base font-extrabold text-emerald-600">{totalUploadedOrExemptCount}</span>
+          <div className="flex-1 md:flex-none border border-amber-300 bg-amber-50 px-3 py-1.5 font-mono text-center md:text-left rounded-md">
+            <span className="block text-[9px] text-amber-800 font-bold uppercase">Pendentes</span>
+            <span className="text-sm font-extrabold text-amber-900">{metricasCobranca.pendentes}</span>
           </div>
-          <div className="flex-1 md:flex-none border border-amber-200 bg-amber-50/10 px-4 py-2 font-mono text-center md:text-left">
-            <span className="block text-[10px] text-amber-600 font-bold uppercase">Pendentes</span>
-            <span className="text-base font-extrabold text-[#78350f]">{totalPendingCount}</span>
+          <div className="flex-1 md:flex-none border border-emerald-300 bg-emerald-50 px-3 py-1.5 font-mono text-center md:text-left rounded-md">
+            <span className="block text-[9px] text-emerald-700 font-bold uppercase">Anexados</span>
+            <span className="text-sm font-extrabold text-emerald-800">{metricasCobranca.anexados}</span>
+          </div>
+          <div className="flex-1 md:flex-none border border-slate-300 bg-slate-100 px-3 py-1.5 font-mono text-center md:text-left rounded-md" title="Admissão ou mobilização posterior a este mês">
+            <span className="block text-[9px] text-slate-650 font-bold uppercase">Não Mobilizados</span>
+            <span className="text-sm font-extrabold text-slate-800">{metricasCobranca.naoMobilizados}</span>
+          </div>
+          <div className="flex-1 md:flex-none border border-rose-200 bg-rose-50 px-3 py-1.5 font-mono text-center md:text-left rounded-md" title="Desmobilizados em ou antes deste mês (não cobrar)">
+            <span className="block text-[9px] text-rose-700 font-bold uppercase">Desmobilizados</span>
+            <span className="text-sm font-extrabold text-rose-800">{metricasCobranca.desmobilizados}</span>
+          </div>
+          <div className="flex-1 md:flex-none border border-purple-200 bg-purple-50 px-3 py-1.5 font-mono text-center md:text-left rounded-md">
+            <span className="block text-[9px] text-purple-700 font-bold uppercase">Isentos</span>
+            <span className="text-sm font-extrabold text-purple-800">{metricasCobranca.isentos}</span>
           </div>
         </div>
       </div>
@@ -640,10 +712,13 @@ export default function HoleritesView({
               setSelectedMatriculas(new Set()); // refresh select set
             }}
           >
-            <option value="todos">Todos os Status</option>
-            <option value="pendente">Pendente</option>
-            <option value="anexado">Anexado</option>
-            <option value="isento">Isento</option>
+            <option value="todos">Todos os Registros ({filteredEmployees.length})</option>
+            <option value="a_cobrar">A Cobrar ({metricasCobranca.aCobrar})</option>
+            <option value="pendente">Pendentes ({metricasCobranca.pendentes})</option>
+            <option value="anexado">Anexados ({metricasCobranca.anexados})</option>
+            <option value="nao_mobilizado">Não Mobilizados ({metricasCobranca.naoMobilizados})</option>
+            <option value="desmobilizado">Desmobilizados ({metricasCobranca.desmobilizados})</option>
+            <option value="isento">Isentos ({metricasCobranca.isentos})</option>
           </select>
 
           <div className="flex items-center gap-1">
@@ -709,9 +784,9 @@ export default function HoleritesView({
       </div>
 
       {/* Main Table */}
-      <div className="overflow-x-auto border border-[#141414]/15">
+      <div className="overflow-x-auto overflow-y-auto max-h-[580px] custom-scrollbar border border-[#141414]/15 rounded-lg">
         <table className="w-full text-left font-sans border-collapse">
-          <thead>
+          <thead className="sticky top-0 z-10 shadow-xs bg-slate-100">
             <tr className="bg-slate-100 border-b border-[#141414]/15 text-[10px] font-mono uppercase text-neutral-500 font-bold tracking-wider">
               <th className="px-5 py-3 w-12 text-center">
                 <button
@@ -744,6 +819,7 @@ export default function HoleritesView({
             ) : (
               filteredEmployees.map((col) => {
                 const hol = holeriteMap[col.matricula];
+                const eleg = elegibilidadeMap[col.matricula];
                 const isSelected = selectedMatriculas.has(col.matricula);
 
                 return (
@@ -804,6 +880,22 @@ export default function HoleritesView({
                             Anexado
                           </span>
                         )
+                      ) : eleg?.statusCobranca === "nao_mobilizado" ? (
+                        <span 
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 text-slate-700 border border-slate-300 text-[10px] font-bold uppercase rounded-md"
+                          title={eleg.mensagem}
+                        >
+                          <Info className="w-3 h-3 text-slate-500" />
+                          Não mobilizado
+                        </span>
+                      ) : eleg?.statusCobranca === "desmobilizado" ? (
+                        <span 
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold uppercase rounded-md"
+                          title={eleg.mensagem}
+                        >
+                          <X className="w-3 h-3 text-rose-500" />
+                          Desmobilizado (Não cobrar)
+                        </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold uppercase rounded-md">
                           <AlertTriangle className="w-3 h-3 text-amber-600" />

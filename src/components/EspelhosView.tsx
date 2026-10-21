@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { Colaborador, Espelho } from "../types";
 import { getOrCreateFolderHierarchy, uploadFileToDrive } from "../lib/googleAuth";
+import { verificarElegibilidadeDocumentoMes } from "../utils/colaboradorStatus";
 import JSZip from "jszip";
 
 interface EspelhosViewProps {
@@ -82,19 +83,76 @@ export default function EspelhosView({
     return map;
   }, [espelhos, selectedMonth, selectedYear]);
 
+  // Mapeamento de elegibilidade e regras de cobrança (mobilização e desmobilização)
+  const elegibilidadeMap = useMemo(() => {
+    const map: Record<string, ReturnType<typeof verificarElegibilidadeDocumentoMes>> = {};
+    colaboradores.forEach(c => {
+      map[c.matricula] = verificarElegibilidadeDocumentoMes(c, selectedMonth, selectedYear);
+    });
+    return map;
+  }, [colaboradores, selectedMonth, selectedYear]);
+
+  // Métricas analíticas do período
+  const metricasCobranca = useMemo(() => {
+    let aCobrar = 0;
+    let pendentes = 0;
+    let anexados = 0;
+    let naoMobilizados = 0;
+    let desmobilizados = 0;
+    let isentos = 0;
+
+    colaboradores.forEach(c => {
+      const eleg = elegibilidadeMap[c.matricula];
+      const esp = espelhoMap[c.matricula];
+
+      if (esp && !esp.tipoIsencao) {
+        anexados++;
+      } else if (esp && esp.tipoIsencao) {
+        isentos++;
+      }
+
+      if (eleg?.statusCobranca === 'nao_mobilizado') {
+        naoMobilizados++;
+      } else if (eleg?.statusCobranca === 'desmobilizado') {
+        desmobilizados++;
+      } else if (eleg?.cobrar) {
+        aCobrar++;
+        if (!esp) {
+          pendentes++;
+        }
+      }
+    });
+
+    return { aCobrar, pendentes, anexados, naoMobilizados, desmobilizados, isentos };
+  }, [colaboradores, elegibilidadeMap, espelhoMap]);
+
   // Check active filter list of employees
   const filteredEmployees = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
-    let list = colaboradores.filter(c => c.status !== "Inativo");
+    // Exibe colaboradores que estiveram ativos no período ou que possuem espelho anexado
+    let list = colaboradores.filter(c => {
+      const eleg = elegibilidadeMap[c.matricula];
+      const esp = espelhoMap[c.matricula];
+      // Se não tem espelho e foi desmobilizado antes do período, só exibe se o filtro específico for solicitado
+      if (!esp && eleg.statusCobranca === 'desmobilizado' && statusFilter !== 'desmobilizado' && statusFilter !== 'todos') {
+        return false;
+      }
+      return true;
+    });
 
     if (statusFilter !== "todos") {
       list = list.filter(c => {
         const esp = espelhoMap[c.matricula];
-        if (statusFilter === "pendente") return !esp;
+        const eleg = elegibilidadeMap[c.matricula];
+
+        if (statusFilter === "a_cobrar") return eleg.cobrar;
+        if (statusFilter === "pendente") return eleg.cobrar && !esp;
         if (statusFilter === "anexado") return esp && !esp.tipoIsencao;
+        if (statusFilter === "nao_mobilizado") return eleg.statusCobranca === 'nao_mobilizado';
+        if (statusFilter === "desmobilizado") return eleg.statusCobranca === 'desmobilizado';
         if (statusFilter === "nao_bate_ponto") return esp && esp.tipoIsencao === "nao_bate_ponto";
         if (statusFilter === "admitido_no_mes") return esp && esp.tipoIsencao === "admitido_no_mes";
-        if (statusFilter === "isento") return esp && !!esp.tipoIsencao;
+        if (statusFilter === "isento") return (esp && !!esp.tipoIsencao) || !eleg.cobrar;
         return true;
       });
     }
@@ -107,7 +165,7 @@ export default function EspelhosView({
     );
     // Sort alphabetically by full name
     return [...matched].sort((a, b) => a.nomeCompleto.localeCompare(b.nomeCompleto, "pt-BR"));
-  }, [colaboradores, searchTerm, statusFilter, espelhoMap]);
+  }, [colaboradores, searchTerm, statusFilter, espelhoMap, elegibilidadeMap]);
 
   // Batch Selection utilities
   const handleToggleSelectRow = (matricula: string) => {
@@ -724,9 +782,9 @@ export default function EspelhosView({
       </div>
 
       {/* Main Table */}
-      <div className="overflow-x-auto border border-[#141414]/15">
+      <div className="overflow-x-auto overflow-y-auto max-h-[580px] custom-scrollbar border border-[#141414]/15 rounded-lg">
         <table className="w-full text-left font-sans border-collapse">
-          <thead>
+          <thead className="sticky top-0 z-10 shadow-xs bg-slate-100">
             <tr className="bg-slate-100 border-b border-[#141414]/15 text-[10px] font-mono uppercase text-neutral-500 font-bold tracking-wider">
               <th className="px-5 py-3 w-12 text-center">
                 <button
@@ -759,6 +817,7 @@ export default function EspelhosView({
             ) : (
               filteredEmployees.map((col) => {
                 const esp = espelhoMap[col.matricula];
+                const eleg = elegibilidadeMap[col.matricula];
                 const isSelected = selectedMatriculas.has(col.matricula);
 
                 return (
@@ -819,6 +878,22 @@ export default function EspelhosView({
                             Anexado
                           </span>
                         )
+                      ) : eleg?.statusCobranca === "nao_mobilizado" ? (
+                        <span 
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 text-slate-700 border border-slate-300 text-[10px] font-bold uppercase rounded-md"
+                          title={eleg.mensagem}
+                        >
+                          <Info className="w-3 h-3 text-slate-500" />
+                          Não mobilizado
+                        </span>
+                      ) : eleg?.statusCobranca === "desmobilizado" ? (
+                        <span 
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold uppercase rounded-md"
+                          title={eleg.mensagem}
+                        >
+                          <X className="w-3 h-3 text-rose-500" />
+                          Desmobilizado (Não cobrar)
+                        </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold uppercase rounded-md">
                           <AlertTriangle className="w-3 h-3 text-amber-600" />

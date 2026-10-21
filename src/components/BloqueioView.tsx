@@ -593,7 +593,7 @@ export default function BloqueioView({ colaboradores, bloqueios, onAddBloqueio, 
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[580px] custom-scrollbar">
           {filteredBloqueiosList.length === 0 ? (
             <div className="p-12 text-center text-[#141414] space-y-2 uppercase tracking-tight font-mono">
               <CheckCircle className="w-8 h-8 mx-auto text-emerald-650" />
@@ -602,7 +602,7 @@ export default function BloqueioView({ colaboradores, bloqueios, onAddBloqueio, 
             </div>
           ) : (
             <table className="w-full border-collapse text-left text-xs min-w-[1200px]">
-              <thead>
+              <thead className="sticky top-0 z-10 shadow-xs bg-[#141414]">
                 <tr className="bg-[#141414] text-[#E4E3E0] text-[9px] font-mono uppercase tracking-wider border-b border-[#141414]">
                   <th className="px-5 py-3">Matrícula</th>
                   <th className="px-5 py-3">Nome do Colaborador</th>

@@ -1,7 +1,26 @@
-import { Colaborador, ASO, Treinamento, Viagem, BloqueioCracha, Memorando, Espelho, Holerite, Sindicato, Ferias } from "./types";
+import { Colaborador, ASO, Treinamento, Viagem, BloqueioCracha, Memorando, Espelho, Holerite, Sindicato, Ferias, DisponibilidadeColaborador, ObservacaoColaborador, ConfiguracaoCustos, AuditLog } from "./types";
 
 // Base API URL is relative since the server hosts both the front-end and back-end
 const API_BASE = "";
+
+export function getAuthHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
+  let username = "Alexsandro";
+  try {
+    const saved = localStorage.getItem("current_user");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed?.username) {
+        username = parsed.username;
+      }
+    }
+  } catch {}
+
+  return {
+    "Content-Type": "application/json",
+    "x-user-name": encodeURIComponent(username),
+    ...extraHeaders
+  };
+}
 
 export async function fetchColaboradores(): Promise<Colaborador[]> {
   try {
@@ -18,7 +37,7 @@ export async function fetchColaboradores(): Promise<Colaborador[]> {
 export async function saveColaborador(colaborador: Colaborador): Promise<Colaborador> {
   const res = await fetch(`${API_BASE}/api/colaboradores`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(colaborador),
   });
   if (!res.ok) {
@@ -31,7 +50,7 @@ export async function saveColaborador(colaborador: Colaborador): Promise<Colabor
 export async function updateColaborador(matricula: string, colaborador: Partial<Colaborador>): Promise<Colaborador> {
   const res = await fetch(`${API_BASE}/api/colaboradores/${matricula}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(colaborador),
   });
   if (!res.ok) {
@@ -63,7 +82,7 @@ export async function fetchASOs(): Promise<ASO[]> {
 export async function saveASO(aso: ASO): Promise<ASO> {
   const res = await fetch(`${API_BASE}/api/asos`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(aso),
   });
   if (!res.ok) {
@@ -87,7 +106,7 @@ export async function fetchTreinamentos(): Promise<Treinamento[]> {
 export async function saveTreinamento(treinamento: Treinamento): Promise<Treinamento> {
   const res = await fetch(`${API_BASE}/api/treinamentos`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(treinamento),
   });
   if (!res.ok) {
@@ -111,7 +130,7 @@ export async function fetchViagens(): Promise<Viagem[]> {
 export async function saveViagem(viagem: Viagem): Promise<Viagem> {
   const res = await fetch(`${API_BASE}/api/viagens`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(viagem),
   });
   if (!res.ok) {
@@ -135,7 +154,7 @@ export async function fetchBloqueios(): Promise<BloqueioCracha[]> {
 export async function saveBloqueio(bloqueio: BloqueioCracha): Promise<BloqueioCracha> {
   const res = await fetch(`${API_BASE}/api/bloqueios`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(bloqueio),
   });
   if (!res.ok) {
@@ -148,7 +167,7 @@ export async function saveBloqueio(bloqueio: BloqueioCracha): Promise<BloqueioCr
 export async function liberarBloqueio(id: string, dataLiberacao: string, dataRealizacao?: string): Promise<BloqueioCracha> {
   const res = await fetch(`${API_BASE}/api/bloqueios/${id}/liberar`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ dataLiberacao, dataRealizacao }),
   });
   if (!res.ok) {
@@ -202,7 +221,7 @@ export async function fetchMemorandos(): Promise<Memorando[]> {
 export async function saveMemorando(memorando: Memorando): Promise<Memorando> {
   const res = await fetch(`${API_BASE}/api/memorandos`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(memorando),
   });
   if (!res.ok) {
@@ -215,7 +234,7 @@ export async function saveMemorando(memorando: Memorando): Promise<Memorando> {
 export async function updateMemorando(id: string, updates: Partial<Memorando>): Promise<Memorando> {
   const res = await fetch(`${API_BASE}/api/memorandos/${id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(updates),
   });
   if (!res.ok) {
@@ -273,7 +292,7 @@ export async function fetchEspelhos(): Promise<Espelho[]> {
 export async function saveEspelho(espelho: Espelho): Promise<Espelho> {
   const res = await fetch(`${API_BASE}/api/espelhos`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(espelho),
   });
   if (!res.ok) {
@@ -306,7 +325,7 @@ export async function fetchHolerites(): Promise<Holerite[]> {
 export async function saveHolerite(holerite: Holerite): Promise<Holerite> {
   const res = await fetch(`${API_BASE}/api/holerites`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(holerite),
   });
   if (!res.ok) {
@@ -339,7 +358,7 @@ export async function fetchSindicatos(): Promise<Sindicato[]> {
 export async function saveSindicato(sindicato: Sindicato): Promise<Sindicato> {
   const res = await fetch(`${API_BASE}/api/sindicatos`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(sindicato),
   });
   if (!res.ok) {
@@ -372,7 +391,7 @@ export async function fetchFerias(): Promise<Ferias[]> {
 export async function saveFerias(ferias: Ferias): Promise<Ferias> {
   const res = await fetch(`${API_BASE}/api/ferias`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify(ferias),
   });
   if (!res.ok) {
@@ -390,3 +409,200 @@ export async function deleteFerias(id: string): Promise<boolean> {
   }
   return true;
 }
+
+// ==========================================
+// Módulo À Disposição (Disponibilidade e Gestão de Mobilização)
+// ==========================================
+
+export async function fetchDisponibilidades(): Promise<DisponibilidadeColaborador[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/disponibilidades`);
+    if (!res.ok) throw new Error("Erro ao buscar disponibilidades");
+    return await res.json();
+  } catch (err) {
+    const local = localStorage.getItem("erp_disponibilidades");
+    return local ? JSON.parse(local) : [];
+  }
+}
+
+export async function saveDisponibilidade(disp: DisponibilidadeColaborador): Promise<DisponibilidadeColaborador> {
+  const res = await fetch(`${API_BASE}/api/disponibilidades`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(disp),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Erro ao registrar disponibilidade");
+  }
+  return await res.json();
+}
+
+export async function updateDisponibilidade(id: string, disp: Partial<DisponibilidadeColaborador>): Promise<DisponibilidadeColaborador> {
+  const res = await fetch(`${API_BASE}/api/disponibilidades/${id}`, {
+    method: "PUT",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(disp),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Erro ao atualizar disponibilidade");
+  }
+  return await res.json();
+}
+
+export async function transferirDisponibilidade(
+  id: string,
+  payload: { projetoDestino: string; dataTransferencia: string; responsavel: string; observacao?: string }
+): Promise<DisponibilidadeColaborador> {
+  const res = await fetch(`${API_BASE}/api/disponibilidades/${id}/transferir`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Erro ao efetivar transferência");
+  }
+  return await res.json();
+}
+
+export async function deleteDisponibilidade(id: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/api/disponibilidades/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Erro ao excluir disponibilidade");
+  }
+  return true;
+}
+
+// ==========================================
+// Módulo Observações Inteligentes
+// ==========================================
+
+export async function fetchObservacoes(): Promise<ObservacaoColaborador[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/observacoes`);
+    if (!res.ok) throw new Error("Erro ao buscar observações");
+    return await res.json();
+  } catch (err) {
+    const local = localStorage.getItem("erp_observacoes");
+    return local ? JSON.parse(local) : [];
+  }
+}
+
+export async function saveObservacao(obs: ObservacaoColaborador): Promise<ObservacaoColaborador> {
+  const res = await fetch(`${API_BASE}/api/observacoes`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(obs),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Erro ao salvar observação");
+  }
+  return await res.json();
+}
+
+export async function updateObservacao(id: string, obs: Partial<ObservacaoColaborador>): Promise<ObservacaoColaborador> {
+  const res = await fetch(`${API_BASE}/api/observacoes/${id}`, {
+    method: "PUT",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(obs),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Erro ao atualizar observação");
+  }
+  return await res.json();
+}
+
+export async function deleteObservacao(id: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/api/observacoes/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Erro ao excluir observação");
+  }
+  return true;
+}
+
+// ==========================================
+// Configuração de Custos (Parâmetros)
+// ==========================================
+
+export async function fetchConfigCustos(): Promise<ConfiguracaoCustos> {
+  try {
+    const res = await fetch(`${API_BASE}/api/config-custos`);
+    if (!res.ok) throw new Error("Erro ao buscar parâmetros de custo");
+    return await res.json();
+  } catch (err) {
+    const local = localStorage.getItem("erp_config_custos");
+    return local ? JSON.parse(local) : {
+      id: "default",
+      encargosAdicionaisPct: 0,
+      beneficiosMensalPadrao: 800,
+      outrosCustosMensalPadrao: 400,
+      salarioBasePadraoFallback: 0,
+    };
+  }
+}
+
+export async function saveConfigCustos(cfg: ConfiguracaoCustos): Promise<ConfiguracaoCustos> {
+  const res = await fetch(`${API_BASE}/api/config-custos`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(cfg),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Erro ao salvar parâmetros de custo");
+  }
+  return await res.json();
+}
+
+// ==========================================
+// Logs e Auditoria do Sistema
+// ==========================================
+
+export async function fetchLogs(): Promise<AuditLog[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/logs`);
+    if (!res.ok) throw new Error("Erro ao buscar logs de auditoria");
+    return await res.json();
+  } catch (err) {
+    const local = localStorage.getItem("erp_logs");
+    return local ? JSON.parse(local) : [];
+  }
+}
+
+export async function saveAuditLog(log: {
+  modulo: AuditLog["modulo"];
+  acao: AuditLog["acao"];
+  descricao: string;
+  matricula?: string;
+  nomeColaborador?: string;
+  detalhes?: any;
+}): Promise<AuditLog> {
+  const res = await fetch(`${API_BASE}/api/logs`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(log),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Erro ao registrar log");
+  }
+  return await res.json();
+}
+
+export async function deleteAuditLog(id: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/api/logs/${id}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    throw new Error("Erro ao excluir log");
+  }
+  return true;
+}
+

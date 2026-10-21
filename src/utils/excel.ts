@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 /**
  * Utility function to export JSON arrays to beautifully formatted Excel sheets
  */
-export function exportToExcel(data: any[], fileName: string, sheetName: string) {
+export function exportToExcel(data: any[], fileName: string, sheetName: string = "Dados") {
   const worksheet = XLSX.utils.json_to_sheet(data);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);

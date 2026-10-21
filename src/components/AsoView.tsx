@@ -13,7 +13,8 @@ import {
   Trash2,
   Download,
   Upload,
-  Info
+  Info,
+  Edit
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { exportToExcel, downloadTemplate, parseExcelDate } from "../utils/excel";
@@ -57,6 +58,16 @@ export default function AsoView({ colaboradores, asos, bloqueios, onAddASO, onDe
       setDeleteConfirm(null);
       setTimeout(() => setErrorMsg(""), 3000);
     }
+  };
+
+  const handleEditASO = (row: any) => {
+    setSelectedMatricula(row.matricula);
+    setEmployeeSearchText(row.nome);
+    setTipoExame(row.tipoExame !== "-" ? row.tipoExame : "Periódico");
+    setDataRealizacao(row.dataRealizacao !== "-" ? row.dataRealizacao : "");
+    setValidadeMeses(row.validadeMeses > 0 ? row.validadeMeses : 12);
+    setIsFormOpen(true);
+    window.scrollTo({ top: 120, behavior: "smooth" });
   };
 
   // Pesquisar colaboradores ativos para vincular ASO
@@ -612,9 +623,9 @@ export default function AsoView({ colaboradores, asos, bloqueios, onAddASO, onDe
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[580px] custom-scrollbar">
           <table className="w-full border-collapse text-left text-xs min-w-[1150px]">
-            <thead>
+            <thead className="sticky top-0 z-10 shadow-xs bg-[#141414]">
               <tr className="bg-[#141414] text-[#E4E3E0] text-[9px] font-mono uppercase tracking-wider border-b border-[#141414]">
                 <th className="px-5 py-3">Matrícula</th>
                 <th className="px-5 py-3">Nome do Colaborador</th>
@@ -696,23 +707,32 @@ export default function AsoView({ colaboradores, asos, bloqueios, onAddASO, onDe
                   {/* Ações */}
                   {isAdmin && (
                     <td className="px-5 py-3.5 text-center">
-                      {row.hasAsoRecord ? (
+                      <div className="flex items-center justify-center gap-1.5">
                         <button
-                          onClick={() => {
-                            setDeleteConfirm({
-                              id: row.asoId,
-                              matricula: row.matricula,
-                              tipoExame: row.tipoExame,
-                              nome: row.nome
-                            });
-                          }}
-                          className="border border-[#141414] hover:bg-[#141414] hover:text-[#E4E3E0] text-[9px] font-mono font-bold uppercase px-2 py-1 cursor-pointer transition-colors"
+                          onClick={() => handleEditASO(row)}
+                          title="Editar / Atualizar dados do ASO"
+                          className="border border-[#141414] hover:bg-[#141414] hover:text-[#E4E3E0] text-[9px] font-mono font-bold uppercase px-2 py-1 cursor-pointer transition-colors flex items-center gap-1"
                         >
-                          Excluir
+                          <Edit className="w-3 h-3 text-indigo-600" />
+                          Editar
                         </button>
-                      ) : (
-                        <span className="text-[9px] text-[#141414]/40 font-mono">-</span>
-                      )}
+                        {row.hasAsoRecord && (
+                          <button
+                            onClick={() => {
+                              setDeleteConfirm({
+                                id: row.asoId,
+                                matricula: row.matricula,
+                                tipoExame: row.tipoExame,
+                                nome: row.nome
+                              });
+                            }}
+                            title="Excluir lançamento de ASO"
+                            className="border border-red-700 text-red-700 hover:bg-red-700 hover:text-white text-[9px] font-mono font-bold uppercase px-2 py-1 cursor-pointer transition-colors"
+                          >
+                            Excluir
+                          </button>
+                        )}
+                      </div>
                     </td>
                   )}
 

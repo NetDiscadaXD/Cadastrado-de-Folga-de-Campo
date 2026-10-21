@@ -1412,9 +1412,9 @@ export default function FolgaView({
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[580px] custom-scrollbar">
           <table className="w-full border-collapse text-left text-xs min-w-[1100px]">
-            <thead>
+            <thead className="sticky top-0 z-10 shadow-xs bg-[#141414]">
               <tr className="bg-[#141414] text-[#E4E3E0] text-[9px] font-mono uppercase tracking-wider border-b border-[#141414]">
                 <th className="px-5 py-3">Matrícula</th>
                 <th className="px-5 py-3">Nome do Colaborador</th>
@@ -1681,9 +1681,9 @@ export default function FolgaView({
           {/* Detalhe de Lançamento por Bilhete de Viagem */}
           <div className="bg-white border border-[#141414] p-5 space-y-3">
             <h4 className="text-xs font-mono uppercase tracking-wider font-extrabold text-[#141414]/80">Livro de Registro de Passagens Individualizado</h4>
-            <div className="overflow-x-auto border border-[#141414]/10">
+            <div className="overflow-x-auto overflow-y-auto max-h-[480px] custom-scrollbar border border-[#141414]/10">
               <table className="w-full text-left text-xs font-mono divide-y divide-[#141414]/15 min-w-[1200px]">
-                <thead className="bg-[#141414]/5">
+                <thead className="sticky top-0 z-10 bg-neutral-100 shadow-xs">
                   <tr className="text-[9px] uppercase tracking-tight text-[#141414]/70">
                     <th className="px-4 py-2">Id Viagem</th>
                     <th className="px-4 py-2">Matrícula</th>

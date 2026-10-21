@@ -63,6 +63,9 @@ export interface EntradaRateioFerias {
   paFim: string;
   feriasInicio: string;
   feriasFim: string;
+  tipoLancamento?: 'nova' | 'credito'; // 'nova' = Nova Férias (aquisitivo padrão), 'credito' = Utilizar Crédito de Férias
+  creditoFerias?: number; // Saldo de dias que o colaborador tinha de férias para retirar (padrão 30)
+  projetoDevido?: string; // Projeto que é devido / devedor desse crédito de férias
   diasAbono: number;
   salarioBase: number; // Valor bruto mensal (R$) já com encargos inclusos
   encargosPct?: number; // Percentual de encargos adicionais/extras (padrão 0%)
@@ -73,8 +76,13 @@ export interface EntradaRateioFerias {
 }
 
 export interface ResultadoRateioFerias {
+  tipoLancamento: 'nova' | 'credito';
+  projetoDevido: string;
   diasGozo: number;
   diasPA: number;
+  creditoFerias: number; // Saldo de dias que o colaborador tinha de férias para retirar
+  diasUtilizados: number; // Total de dias retirados (gozo + abono)
+  saldoRestante: number; // Saldo restante (creditoFerias - diasUtilizados)
   diasOrigem: number;
   diasAtual: number;
   pctOrigem: number; // 0 a 1
@@ -87,15 +95,21 @@ export interface ResultadoRateioFerias {
   custoTotal: number;
   custoOrigem: number;
   custoAtual: number;
-  rateado: boolean; // false quando não há projeto de origem distinto (100% projeto atual)
+  rateado: boolean; // false quando não há projeto devedor/origem distinto (100% projeto atual)
 }
 
 const arredonda = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
 
 export function calcularRateioFerias(e: EntradaRateioFerias): ResultadoRateioFerias {
+  const tipoLancamento = e.tipoLancamento || 'nova';
   const diasGozo = diasInclusivos(e.feriasInicio, e.feriasFim);
   const diasPA = diasInclusivos(e.paInicio, e.paFim);
+  const creditoFerias = (e.creditoFerias !== undefined && e.creditoFerias !== null && !isNaN(e.creditoFerias) && e.creditoFerias > 0)
+    ? e.creditoFerias
+    : 30;
   const diasAbono = Math.max(0, e.diasAbono || 0);
+  const diasUtilizados = diasGozo + diasAbono;
+  const saldoRestante = creditoFerias - diasUtilizados;
   const valorBruto = Math.max(0, e.salarioBase || 0);
   const incluirTerco = e.incluirTerco !== false;
   const encargosPct = Math.max(0, e.encargosPct || 0);
@@ -109,28 +123,54 @@ export function calcularRateioFerias(e: EntradaRateioFerias): ResultadoRateioFer
   const encargos = encargosPct > 0 ? (valorGozo + tercoGozo) * (encargosPct / 100) : 0;
   const custoTotal = arredonda(valorGozo + valorAbono + tercoGozo + tercoAbono + encargos);
 
-  const origem = (e.projetoOrigem || "").trim();
   const atual = (e.projetoAtual || "").trim();
-  const rateado = !!origem && origem !== atual && !!e.dataInicioCanteiro && diasPA > 0;
+  const projetoDevido = (e.projetoDevido || e.projetoOrigem || "").trim();
 
+  let custoOrigem = 0;
+  let custoAtual = custoTotal;
+  let diasOrigem = 0;
   let diasAtual = diasPA;
-  if (rateado) {
-    if (e.dataInicioCanteiro <= e.paInicio) diasAtual = diasPA;
-    else if (e.dataInicioCanteiro > e.paFim) diasAtual = 0;
-    else diasAtual = diasInclusivos(e.dataInicioCanteiro, e.paFim);
+  let pctOrigem = 0;
+  let pctAtual = 1;
+  let rateado = false;
+
+  if (tipoLancamento === 'credito' && projetoDevido && projetoDevido !== atual) {
+    // Quando o lançamento utiliza crédito de férias devido por outro projeto:
+    // O custo é atribuído integralmente ao projeto que deve esse crédito
+    rateado = true;
+    custoOrigem = custoTotal;
+    custoAtual = 0;
+    diasOrigem = diasUtilizados;
+    diasAtual = 0;
+    pctOrigem = 1;
+    pctAtual = 0;
+  } else {
+    // Lançamento normal de férias (rateio por período aquisitivo se houver projeto de origem)
+    const origem = (e.projetoOrigem || "").trim();
+    rateado = !!origem && origem !== atual && !!e.dataInicioCanteiro && diasPA > 0;
+
+    if (rateado) {
+      if (e.dataInicioCanteiro <= e.paInicio) diasAtual = diasPA;
+      else if (e.dataInicioCanteiro > e.paFim) diasAtual = 0;
+      else diasAtual = diasInclusivos(e.dataInicioCanteiro, e.paFim);
+
+      diasOrigem = diasPA - diasAtual;
+      pctAtual = diasPA > 0 ? diasAtual / diasPA : 1;
+      pctOrigem = diasPA > 0 ? diasOrigem / diasPA : 0;
+
+      custoOrigem = arredonda(custoTotal * pctOrigem);
+      custoAtual = arredonda(custoTotal - custoOrigem);
+    }
   }
-  const diasOrigem = diasPA - diasAtual;
-
-  const pctAtual = diasPA > 0 ? diasAtual / diasPA : 1;
-  const pctOrigem = diasPA > 0 ? diasOrigem / diasPA : 0;
-
-  // O projeto de origem recebe a parte arredondada; o atual fica com o restante, para a soma fechar.
-  const custoOrigem = arredonda(custoTotal * pctOrigem);
-  const custoAtual = arredonda(custoTotal - custoOrigem);
 
   return {
+    tipoLancamento,
+    projetoDevido,
     diasGozo,
     diasPA,
+    creditoFerias,
+    diasUtilizados,
+    saldoRestante,
     diasOrigem,
     diasAtual,
     pctOrigem,
@@ -151,14 +191,18 @@ export function calcularRateioFerias(e: EntradaRateioFerias): ResultadoRateioFer
 export function validarFerias(e: EntradaRateioFerias): string[] {
   const avisos: string[] = [];
   const gozo = diasInclusivos(e.feriasInicio, e.feriasFim);
+  const credito = (e.creditoFerias !== undefined && e.creditoFerias !== null && !isNaN(e.creditoFerias) && e.creditoFerias > 0)
+    ? e.creditoFerias
+    : 30;
+
   if (e.feriasInicio && e.feriasFim && e.feriasFim < e.feriasInicio) {
     avisos.push("O fim das férias é anterior ao início.");
   }
   if (e.diasAbono < 0 || e.diasAbono > 10) {
     avisos.push("O abono pecuniário permite vender no máximo 10 dias.");
   }
-  if (gozo + (e.diasAbono || 0) > 30) {
-    avisos.push("Gozo + abono ultrapassa 30 dias.");
+  if (gozo + (e.diasAbono || 0) > credito) {
+    avisos.push(`Dias retirados (${gozo + (e.diasAbono || 0)} dias: ${gozo} gozo + ${e.diasAbono || 0} abono) ultrapassam o crédito de férias informado (${credito} dias).`);
   }
   if (e.feriasInicio && e.paFim && e.feriasInicio <= e.paFim) {
     avisos.push("As férias começam antes do fim do período aquisitivo.");

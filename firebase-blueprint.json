@@ -199,6 +199,61 @@
         "dataCriacao": { "type": "string", "description": "Data de criação do lançamento YYYY-MM-DD" }
       },
       "required": ["id", "matricula", "paInicio", "paFim", "feriasInicio", "feriasFim", "diasAbono", "salarioBase", "encargosPct", "projetoOrigem", "projetoAtual", "dataInicioCanteiro", "dataCriacao"]
+    },
+    "DisponibilidadeColaborador": {
+      "title": "DisponibilidadeColaborador",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID único da disponibilidade" },
+        "matricula": { "type": "string", "description": "Matrícula do colaborador" },
+        "nomeColaborador": { "type": "string", "description": "Nome completo do colaborador" },
+        "funcao": { "type": "string", "description": "Função do colaborador" },
+        "projetoOrigem": { "type": "string", "description": "Projeto de origem da liberação" },
+        "dataLiberacao": { "type": "string", "description": "Data de comunicação da liberação YYYY-MM-DD" },
+        "dataDisponibilidade": { "type": "string", "description": "Data efetiva de disponibilidade YYYY-MM-DD" },
+        "motivoLiberacao": { "type": "string", "description": "Motivo da liberação" },
+        "projetoDestino": { "type": "string", "description": "Projeto de destino se transferido" },
+        "dataTransferencia": { "type": "string", "description": "Data da transferência YYYY-MM-DD" },
+        "responsavel": { "type": "string", "description": "Responsável pelo registro" },
+        "status": { "type": "string", "description": "Status da disponibilidade" },
+        "observacoes": { "type": "string", "description": "Observações livres" },
+        "dataCriacao": { "type": "string", "description": "Data e hora de criação" },
+        "dataAtualizacao": { "type": "string", "description": "Data e hora de atualização" }
+      },
+      "required": ["id", "matricula", "dataLiberacao", "dataDisponibilidade", "motivoLiberacao", "responsavel", "status"]
+    },
+    "ObservacaoColaborador": {
+      "title": "ObservacaoColaborador",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID único da observação" },
+        "matricula": { "type": "string", "description": "Matrícula do colaborador" },
+        "nomeColaborador": { "type": "string", "description": "Nome do colaborador" },
+        "funcao": { "type": "string", "description": "Função do colaborador" },
+        "projeto": { "type": "string", "description": "Projeto do colaborador" },
+        "conteudo": { "type": "string", "description": "Conteúdo integral da observação" },
+        "categoriaSugerida": { "type": "string", "description": "Categoria sugerida automaticamente" },
+        "categoriaConfirmada": { "type": "string", "description": "Categoria confirmada pelo usuário" },
+        "autor": { "type": "string", "description": "Autor responsável pelo registro" },
+        "dataHora": { "type": "string", "description": "Data e hora da observação" }
+      },
+      "required": ["id", "matricula", "conteudo", "categoriaConfirmada", "autor", "dataHora"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Registro de auditoria com data e horário de todas as ações operacionais",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID único do log" },
+        "dataHora": { "type": "string", "description": "Data e horário exatos em formato ISO" },
+        "usuario": { "type": "string", "description": "Usuário que executou a ação" },
+        "modulo": { "type": "string", "description": "Módulo onde ocorreu a ação" },
+        "acao": { "type": "string", "description": "Tipo de ação (Inclusão, Edição, Exclusão, etc.)" },
+        "matricula": { "type": "string", "description": "Matrícula do colaborador associado" },
+        "nomeColaborador": { "type": "string", "description": "Nome do colaborador associado" },
+        "descricao": { "type": "string", "description": "Descrição detalhada da ação executada" }
+      },
+      "required": ["id", "dataHora", "usuario", "modulo", "acao", "descricao"]
     }
   },
   "firestore": {
@@ -241,6 +296,18 @@
     "ferias": {
       "schema": "Ferias",
       "description": "Coleção de lançamentos de férias e rateio por projeto"
+    },
+    "disponibilidades": {
+      "schema": "DisponibilidadeColaborador",
+      "description": "Coleção de colaboradores à disposição e histórico de transferências"
+    },
+    "observacoes": {
+      "schema": "ObservacaoColaborador",
+      "description": "Coleção de observações inteligentes categorizadas com auditoria"
+    },
+    "logs": {
+      "schema": "AuditLog",
+      "description": "Trilha de auditoria e registro de ações com data e horário"
     }
   }
 }

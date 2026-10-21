@@ -56,6 +56,26 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Coleção: disponibilidades
+    match /disponibilidades/{disponibilidadeId} {
+      allow read, write: if true;
+    }
+
+    // Coleção: observacoes
+    match /observacoes/{observacaoId} {
+      allow read, write: if true;
+    }
+
+    // Coleção: configuracoes
+    match /configuracoes/{configId} {
+      allow read, write: if true;
+    }
+
+    // Coleção: logs
+    match /logs/{logId} {
+      allow read, write: if true;
+    }
+
     // Coleção: gdrive_credentials
     match /gdrive_credentials/{credentialId} {
       allow read, write: if true;

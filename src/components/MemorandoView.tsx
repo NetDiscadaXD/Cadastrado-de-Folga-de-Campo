@@ -21,10 +21,19 @@ import {
   Calendar,
   Navigation,
   Edit,
-  Cloud
+  Cloud,
+  CalendarDays,
+  Hourglass,
+  Timer,
+  Palmtree,
+  ArrowRight,
+  ExternalLink,
+  ShieldCheck,
+  Filter,
+  Eye
 } from "lucide-react";
-import { Colaborador, Memorando } from "../types";
-import { formatBrDate } from "../utils/date";
+import { Colaborador, Memorando, Ferias } from "../types";
+import { formatBrDate, diffDays } from "../utils/date";
 import * as XLSX from "xlsx";
 import { getOrCreateFolderHierarchy, uploadExcelToGDriveAsSheets, uploadFileToDrive } from "../lib/googleAuth";
 import { getDirectDriveImageURL } from "../utils/drive";
@@ -32,10 +41,12 @@ import { getDirectDriveImageURL } from "../utils/drive";
 interface MemorandoViewProps {
   colaboradores: Colaborador[];
   memorandos: Memorando[];
+  ferias?: Ferias[];
   onAddMemorando: (novo: Memorando) => Promise<void>;
   onUpdateMemorando: (id: string, updates: Partial<Memorando>) => Promise<void>;
   onDeleteMemorando: (id: string) => Promise<void>;
   onPrint?: () => void;
+  onNavigate?: (tab: any) => void;
   googleToken?: string | null;
   isAdmin?: boolean;
 }
@@ -43,16 +54,18 @@ interface MemorandoViewProps {
 export default function MemorandoView({
   colaboradores,
   memorandos,
+  ferias = [],
   onAddMemorando,
   onUpdateMemorando,
   onDeleteMemorando,
   onPrint,
+  onNavigate,
   googleToken,
   isAdmin = true
 }: MemorandoViewProps) {
   
-  // Controle de Abas Locais (Listar vs Criar Novo ou Editar)
-  const [localTab, setLocalTab] = useState<"list" | "create">("list");
+  // Controle de Abas Locais (Listar vs Relatório de Férias vs Criar Novo ou Editar)
+  const [localTab, setLocalTab] = useState<"list" | "relatorio_ferias" | "create">("list");
 
   // Controle de Edição de Memorando
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -84,6 +97,12 @@ export default function MemorandoView({
   const [filterTipo, setFilterTipo] = useState<string>("todos");
   const [filterStatus, setFilterStatus] = useState<string>("pendentes"); // todos, finalizados, pendentes
 
+  // Filtros específicos para o Relatório de Férias e Acompanhamento
+  const [filtroPrazoFerias, setFiltroPrazoFerias] = useState<
+    "todos" | "urgente_7d" | "proximos_15d" | "proximos_30d" | "iniciadas" | "pendentes_checkin" | "sem_data"
+  >("todos");
+  const [buscaRelatorioFerias, setBuscaRelatorioFerias] = useState("");
+
   // Google Drive Sync States & Effects
   const [gdriveSheetLink, setGdriveSheetLink] = useState<string>(() => sessionStorage.getItem("gdrive_sheet_link_memorando") || "");
   const [isSyncingDrive, setIsSyncingDrive] = useState(false);
@@ -109,12 +128,14 @@ export default function MemorandoView({
   const [dataCriacao, setDataCriacao] = useState(() => new Date().toISOString().split("T")[0]);
   const [observacao, setObservacao] = useState("");
 
-  // Informações para Folga de Campo
+  // Informações para Folga de Campo & Férias
   const [dataSaida, setDataSaida] = useState("");
   const [dataRetorno, setDataRetorno] = useState("");
   const [retornoTrabalho, setRetornoTrabalho] = useState("");
   const [destino, setDestino] = useState("");
   const [tipoPassagem, setTipoPassagem] = useState<"Terrestre" | "Aérea" | "Carro" | "">("");
+  const [dataInicioFerias, setDataInicioFerias] = useState("");
+  const [diasFerias, setDiasFerias] = useState("");
 
   // Anexo de Documento
   const [anexoNome, setAnexoNome] = useState("");
@@ -142,7 +163,7 @@ export default function MemorandoView({
     return colaboradores.filter(c => c.status !== "Inativo");
   }, [colaboradores]);
 
-  // Preencher nome de colaborador se selecionar matrícula
+  // Preencher nome de colaborador se selecionar matrícula e sugerir férias
   const handleSelectColaborador = (matricula: string) => {
     setSelectedMatricula(matricula);
     if (matricula === "manual") {
@@ -151,6 +172,18 @@ export default function MemorandoView({
       const col = colaboradores.find(c => c.matricula === matricula);
       if (col) {
         setManualNome(col.nomeCompleto);
+      }
+
+      // Sugerir automaticamente data de início de férias caso haja programação no módulo de Férias
+      if (ferias && ferias.length > 0) {
+        const feriasColab = ferias
+          .filter(f => f.matricula === matricula && f.feriasInicio)
+          .sort((a, b) => a.feriasInicio.localeCompare(b.feriasInicio));
+        const hojeStr = new Date().toISOString().split("T")[0];
+        const feriasAlvo = feriasColab.find(f => f.feriasInicio >= hojeStr) || feriasColab[feriasColab.length - 1];
+        if (feriasAlvo && !dataInicioFerias) {
+          setDataInicioFerias(feriasAlvo.feriasInicio);
+        }
       }
     }
   };
@@ -221,6 +254,8 @@ export default function MemorandoView({
     setRetornoTrabalho("");
     setDestino("");
     setTipoPassagem("");
+    setDataInicioFerias("");
+    setDiasFerias("");
 
     setAnexoNome("");
     setAnexoConteudo("");
@@ -254,6 +289,8 @@ export default function MemorandoView({
     setRetornoTrabalho(m.retornoTrabalho || "");
     setDestino(m.destino || "");
     setTipoPassagem(m.tipoPassagem || "");
+    setDataInicioFerias(m.dataInicioFerias || "");
+    setDiasFerias(m.diasFerias ? String(m.diasFerias) : "");
 
     setAnexoNome(m.anexoNome || "");
     setAnexoConteudo(m.anexoConteudo || "");
@@ -332,12 +369,14 @@ export default function MemorandoView({
         dataCriacao,
         observacao: observacao.trim(),
 
-        // Extra dados de folga de campo
+        // Extra dados de folga de campo & férias
         dataSaida: tipoMemorando === "Folga de campo" ? dataSaida : undefined,
         dataRetorno: tipoMemorando === "Folga de campo" ? dataRetorno : undefined,
         retornoTrabalho: tipoMemorando === "Folga de campo" ? retornoTrabalho : undefined,
         destino: tipoMemorando === "Folga de campo" ? destino : undefined,
         tipoPassagem: tipoMemorando === "Folga de campo" ? (tipoPassagem || undefined) : undefined,
+        dataInicioFerias: tipoMemorando === "Folga de campo" ? (dataInicioFerias || undefined) : undefined,
+        diasFerias: tipoMemorando === "Folga de campo" && diasFerias ? Number(diasFerias) : undefined,
 
         // Anexo de documento 
         anexoNome: anexoNome ? anexoNome : undefined,
@@ -429,6 +468,8 @@ export default function MemorandoView({
       const folders = await getOrCreateFolderHierarchy(token);
       const dataToExport = list.map(m => {
         const isFolga = m.tipoMemorando === "Folga de campo";
+        const hojeStr = new Date().toISOString().split("T")[0];
+        const diasFaltam = m.dataInicioFerias ? diffDays(hojeStr, m.dataInicioFerias) : null;
         return {
           "Matrícula": m.matricula,
           "Colaborador": m.nomeColaborador,
@@ -441,6 +482,9 @@ export default function MemorandoView({
           "Retorno ao Trabalho": m.retornoTrabalho ? formatBrDate(m.retornoTrabalho) : "-",
           "Destino": m.destino || "-",
           "Tipo de Passagem": m.tipoPassagem || "-",
+          "Data de Início das Férias": m.dataInicioFerias ? formatBrDate(m.dataInicioFerias) : "-",
+          "Duração Férias (Dias)": m.diasFerias || "-",
+          "Dias Faltando para Férias": diasFaltam !== null ? (diasFaltam >= 0 ? `${diasFaltam} dias` : `Iniciada há ${Math.abs(diasFaltam)}d`) : "-",
 
           // Checkins específicos para Folga
           "Passagem OK": isFolga ? (m.passagemOk ? `SIM (${m.passagemOkAt || ""})` : "NÃO") : "N/A",
@@ -478,10 +522,12 @@ export default function MemorandoView({
     }
   }, [googleToken, filteredMemorandos]);
 
-  // Exportar Excel de Memorandos
+  // Exportar Excel de Memorandos Geral
   const handleExportExcel = () => {
+    const hojeStr = new Date().toISOString().split("T")[0];
     const dataToExport = filteredMemorandos.map(m => {
       const isFolga = m.tipoMemorando === "Folga de campo";
+      const diasFaltam = m.dataInicioFerias ? diffDays(hojeStr, m.dataInicioFerias) : null;
       return {
         "Matrícula": m.matricula,
         "Colaborador": m.nomeColaborador,
@@ -494,6 +540,9 @@ export default function MemorandoView({
         "Retorno ao Trabalho": m.retornoTrabalho ? formatBrDate(m.retornoTrabalho) : "-",
         "Destino": m.destino || "-",
         "Tipo de Passagem": m.tipoPassagem || "-",
+        "Data de Início das Férias": m.dataInicioFerias ? formatBrDate(m.dataInicioFerias) : "-",
+        "Duração Férias (Dias)": m.diasFerias || "-",
+        "Dias Faltando para Férias": diasFaltam !== null ? (diasFaltam >= 0 ? `${diasFaltam} dias` : `Iniciada há ${Math.abs(diasFaltam)}d`) : "-",
 
         // Checkins específicos para Folga
         "Passagem OK": isFolga ? (m.passagemOk ? `SIM (${m.passagemOkAt || ""})` : "NÃO") : "N/A",
@@ -517,16 +566,204 @@ export default function MemorandoView({
     ws["!cols"] = [
       { wch: 12 }, { wch: 30 }, { wch: 18 }, { wch: 15 },
       { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
+      { wch: 16 }, { wch: 14 }, { wch: 18 },
       { wch: 14 }, { wch: 14 }, { wch: 14 },
       { wch: 14 }, { wch: 18 },
       { wch: 15 }, { wch: 15 }, { wch: 45 }
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, "Memorandos");
-    XLSX.writeFile(wb, `ERP_Memorandos_Emissao_Borborema_${new Date().toISOString().split("T")[0]}.xlsx`);
+    XLSX.writeFile(wb, `ERP_Memorandos_Emissao_Borborema_${hojeStr}.xlsx`);
   };
 
-  // Estatísticas rápidas de Memorandos
+  // =========================================================================
+  // RELATÓRIO DE DATA DE INÍCIO DE FÉRIAS & ACOMPANHAMENTO DE SOLICITAÇÕES
+  // =========================================================================
+  const relatorioFeriasItems = useMemo(() => {
+    const hojeStr = new Date().toISOString().split("T")[0];
+    const folgas = memorandos.filter(m => m.tipoMemorando === "Folga de campo");
+
+    return folgas.map(m => {
+      const col = colaboradores.find(c => c.matricula === m.matricula);
+
+      let dataFerias = m.dataInicioFerias || "";
+      let diasDura = m.diasFerias || undefined;
+
+      // Sugestão de fallback pelo módulo de férias se não preenchido explicitamente no memo
+      if (!dataFerias && ferias && ferias.length > 0) {
+        const feriasColab = ferias
+          .filter(f => f.matricula === m.matricula && f.feriasInicio)
+          .sort((a, b) => a.feriasInicio.localeCompare(b.feriasInicio));
+        const feriasAlvo = feriasColab.find(f => f.feriasInicio >= (m.dataSaida || m.dataCriacao)) || feriasColab[0];
+        if (feriasAlvo) {
+          dataFerias = feriasAlvo.feriasInicio;
+        }
+      }
+
+      const temDataFerias = !!dataFerias;
+      const diasRestantes = temDataFerias ? diffDays(hojeStr, dataFerias) : null;
+      const checkinCompleto = m.passagemOk && m.adiantamentoOk && m.envioSedeOk;
+
+      const pendencias: string[] = [];
+      if (!m.passagemOk) pendencias.push("Passagem");
+      if (!m.adiantamentoOk) pendencias.push("Adiantamento");
+      if (!m.envioSedeOk) pendencias.push("Envio à Sede");
+
+      return {
+        memorando: m,
+        colaborador: col,
+        dataInicioFerias: dataFerias,
+        diasFerias: diasDura,
+        temDataFerias,
+        diasRestantes,
+        checkinCompleto,
+        pendencias
+      };
+    });
+  }, [memorandos, colaboradores, ferias]);
+
+  const statsRelatorioFerias = useMemo(() => {
+    let totalComFerias = 0;
+    let urgentes7d = 0;
+    let proximos15d = 0;
+    let proximos30d = 0;
+    let iniciadas = 0;
+    let comPendenciaCheckin = 0;
+    let checkinConcluido = 0;
+    let semData = 0;
+
+    relatorioFeriasItems.forEach(item => {
+      if (item.temDataFerias && item.diasRestantes !== null) {
+        totalComFerias++;
+        const d = item.diasRestantes;
+        if (d >= 0 && d <= 7) urgentes7d++;
+        else if (d > 7 && d <= 15) proximos15d++;
+        else if (d > 15 && d <= 30) proximos30d++;
+        else if (d < 0) iniciadas++;
+      } else {
+        semData++;
+      }
+      if (!item.checkinCompleto) comPendenciaCheckin++;
+      else checkinConcluido++;
+    });
+
+    return {
+      totalFolgas: relatorioFeriasItems.length,
+      totalComFerias,
+      urgentes7d,
+      proximos15d,
+      proximos30d,
+      iniciadas,
+      semData,
+      comPendenciaCheckin,
+      checkinConcluido
+    };
+  }, [relatorioFeriasItems]);
+
+  const relatorioFeriasFiltrados = useMemo(() => {
+    return relatorioFeriasItems.filter(item => {
+      if (filtroPrazoFerias === "urgente_7d") {
+        if (!item.temDataFerias || item.diasRestantes === null || item.diasRestantes < 0 || item.diasRestantes > 7) return false;
+      } else if (filtroPrazoFerias === "proximos_15d") {
+        if (!item.temDataFerias || item.diasRestantes === null || item.diasRestantes < 0 || item.diasRestantes > 15) return false;
+      } else if (filtroPrazoFerias === "proximos_30d") {
+        if (!item.temDataFerias || item.diasRestantes === null || item.diasRestantes < 0 || item.diasRestantes > 30) return false;
+      } else if (filtroPrazoFerias === "iniciadas") {
+        if (!item.temDataFerias || item.diasRestantes === null || item.diasRestantes >= 0) return false;
+      } else if (filtroPrazoFerias === "pendentes_checkin") {
+        if (item.checkinCompleto) return false;
+      } else if (filtroPrazoFerias === "sem_data") {
+        if (item.temDataFerias) return false;
+      }
+
+      if (buscaRelatorioFerias.trim()) {
+        const t = buscaRelatorioFerias.toLowerCase().trim();
+        const m = item.memorando;
+        const c = item.colaborador;
+        return (
+          m.nomeColaborador.toLowerCase().includes(t) ||
+          m.matricula.toLowerCase().includes(t) ||
+          (m.destino || "").toLowerCase().includes(t) ||
+          (c?.funcao || "").toLowerCase().includes(t) ||
+          (item.dataInicioFerias && item.dataInicioFerias.includes(t))
+        );
+      }
+
+      return true;
+    }).sort((a, b) => {
+      if (a.diasRestantes === null && b.diasRestantes === null) return 0;
+      if (a.diasRestantes === null) return 1;
+      if (b.diasRestantes === null) return -1;
+      return a.diasRestantes - b.diasRestantes;
+    });
+  }, [relatorioFeriasItems, filtroPrazoFerias, buscaRelatorioFerias]);
+
+  const handleExportRelatorioFerias = () => {
+    const hojeStr = new Date().toISOString().split("T")[0];
+    const dataToExport = relatorioFeriasFiltrados.map(({ memorando: m, colaborador: col, dataInicioFerias, diasFerias, diasRestantes, checkinCompleto, pendencias }) => {
+      let classificacaoPrazo = "Sem data de férias";
+      let contagemMsg = "-";
+      if (diasRestantes !== null) {
+        if (diasRestantes === 0) {
+          classificacaoPrazo = "Inicia Hoje";
+          contagemMsg = "0 dias (Inicia HOJE)";
+        } else if (diasRestantes > 0 && diasRestantes <= 7) {
+          classificacaoPrazo = "🚨 Crítico (≤ 7 dias)";
+          contagemMsg = `Faltam ${diasRestantes} dias`;
+        } else if (diasRestantes > 7 && diasRestantes <= 15) {
+          classificacaoPrazo = "⏳ Atenção (8-15 dias)";
+          contagemMsg = `Faltam ${diasRestantes} dias`;
+        } else if (diasRestantes > 15) {
+          classificacaoPrazo = "📅 Planejado (> 15 dias)";
+          contagemMsg = `Faltam ${diasRestantes} dias`;
+        } else {
+          classificacaoPrazo = "🏖️ Já Iniciada / Vigente";
+          contagemMsg = `Iniciada há ${Math.abs(diasRestantes)} dias`;
+        }
+      }
+
+      return {
+        "Código Memorando": m.id,
+        "Matrícula": m.matricula,
+        "Nome do Colaborador": m.nomeColaborador,
+        "Função": col?.funcao || "-",
+        "Mão de Obra": col?.tipoMaoDeObra || "-",
+        "Regime de Trabalho": col?.regimeTrabalho || "-",
+        "Data do Memorando": formatBrDate(m.dataCriacao),
+        "Data de Saída": m.dataSaida ? formatBrDate(m.dataSaida) : "-",
+        "Data de Retorno": m.dataRetorno ? formatBrDate(m.dataRetorno) : "-",
+        "Retorno ao Trabalho": m.retornoTrabalho ? formatBrDate(m.retornoTrabalho) : "-",
+        "Destino": m.destino || "-",
+        "Tipo Transporte": m.tipoPassagem || "-",
+        "Data de Início das Férias": dataInicioFerias ? formatBrDate(dataInicioFerias) : "Não informada",
+        "Duração Férias (Dias)": diasFerias || "-",
+        "Quantos Dias Faltam": contagemMsg,
+        "Classificação do Prazo": classificacaoPrazo,
+        "Passagem OK?": m.passagemOk ? `SIM (${m.passagemOkAt || ""})` : "PENDENTE",
+        "Adiantamento OK?": m.adiantamentoOk ? `SIM (${m.adiantamentoOkAt || ""})` : "PENDENTE",
+        "Envio Sede OK?": m.envioSedeOk ? `SIM (${m.envioSedeOkAt || ""})` : "PENDENTE",
+        "Pendências de Trâmites": pendencias.length > 0 ? pendencias.join(", ") : "Nenhuma (100% OK)",
+        "Status Geral": m.finalizada ? `FINALIZADA (${m.finalizadaAt || ""})` : "EM ANDAMENTO",
+        "Observações": m.observacao || "-"
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+
+    ws["!cols"] = [
+      { wch: 14 }, { wch: 12 }, { wch: 30 }, { wch: 22 }, { wch: 12 },
+      { wch: 15 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 15 },
+      { wch: 20 }, { wch: 14 }, { wch: 18 }, { wch: 12 }, { wch: 20 },
+      { wch: 22 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 25 },
+      { wch: 16 }, { wch: 35 }
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, "Acompanhamento Férias");
+    XLSX.writeFile(wb, `Relatorio_Acompanhamento_Ferias_Folga_${hojeStr}.xlsx`);
+  };
+
+  // Estatísticas rápidas de Memorandos Gerais
   const stats = useMemo(() => {
     const total = memorandos.length;
     const folgas = memorandos.filter(m => m.tipoMemorando === "Folga de campo").length;
@@ -541,9 +778,12 @@ export default function MemorandoView({
     <div className="space-y-6">
       
       {/* CARD DE RESUMO DE INDICADORES (ESTILO SLATE NEUTRAL) */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
         
-        <div className="bg-white border-2 border-[#141414] p-4 flex flex-col justify-between shadow-[4px_4px_0px_0px_#141414]/10">
+        <div 
+          onClick={() => { setLocalTab("list"); setFilterTipo("todos"); }}
+          className="bg-white border-2 border-[#141414] p-3.5 flex flex-col justify-between shadow-[3px_3px_0px_0px_#141414]/10 cursor-pointer hover:border-slate-800 transition-all"
+        >
           <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-500">Memos Gerais</span>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-2xl font-sans font-black text-slate-900">{stats.total}</span>
@@ -551,7 +791,10 @@ export default function MemorandoView({
           </div>
         </div>
 
-        <div className="bg-white border-2 border-[#141414] p-4 flex flex-col justify-between shadow-[4px_4px_0px_0px_#141414]/10">
+        <div 
+          onClick={() => { setLocalTab("list"); setFilterTipo("Folga de campo"); }}
+          className="bg-white border-2 border-[#141414] p-3.5 flex flex-col justify-between shadow-[3px_3px_0px_0px_#141414]/10 cursor-pointer hover:border-indigo-600 transition-all"
+        >
           <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-indigo-700">Folga de Campo</span>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-2xl font-sans font-black text-indigo-900">{stats.folgas}</span>
@@ -559,7 +802,10 @@ export default function MemorandoView({
           </div>
         </div>
 
-        <div className="bg-white border-2 border-[#141414] p-4 flex flex-col justify-between shadow-[4px_4px_0px_0px_#141414]/10">
+        <div 
+          onClick={() => { setLocalTab("list"); setFilterTipo("Venda de Folga"); }}
+          className="bg-white border-2 border-[#141414] p-3.5 flex flex-col justify-between shadow-[3px_3px_0px_0px_#141414]/10 cursor-pointer hover:border-amber-600 transition-all"
+        >
           <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-amber-600">Venda de Folga</span>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-2xl font-sans font-black text-amber-900">{stats.vendas}</span>
@@ -567,7 +813,35 @@ export default function MemorandoView({
           </div>
         </div>
 
-        <div className="bg-emerald-50 border-2 border-[#141414] p-4 flex flex-col justify-between shadow-[4px_4px_0px_0px_#141414]/10">
+        {/* Férias da Folga de Campo (Acompanhamento) */}
+        <div 
+          onClick={() => { clearForm(); setLocalTab("relatorio_ferias"); }}
+          className={`p-3.5 flex flex-col justify-between border-2 transition-all cursor-pointer shadow-[3px_3px_0px_0px_#141414]/10 ${
+            localTab === "relatorio_ferias"
+              ? "bg-blue-100 border-blue-900 ring-2 ring-blue-600"
+              : "bg-blue-50/80 border-blue-600 hover:bg-blue-100/60"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-blue-900 flex items-center gap-1">
+              <span>🏖️ Férias (Folga)</span>
+            </span>
+            {statsRelatorioFerias.urgentes7d > 0 && (
+              <span className="text-[8px] font-mono font-bold bg-rose-600 text-white px-1.5 py-0.2 rounded-full animate-pulse">
+                {statsRelatorioFerias.urgentes7d} urgentes
+              </span>
+            )}
+          </div>
+          <div className="flex items-baseline gap-2 mt-2">
+            <span className="text-2xl font-sans font-black text-blue-950">{statsRelatorioFerias.totalComFerias}</span>
+            <span className="text-[10px] font-mono text-blue-800 font-bold">com início</span>
+          </div>
+        </div>
+
+        <div 
+          onClick={() => { setLocalTab("list"); setFilterStatus("finalizados"); }}
+          className="bg-emerald-50 border-2 border-[#141414] p-3.5 flex flex-col justify-between shadow-[3px_3px_0px_0px_#141414]/10 cursor-pointer hover:border-emerald-700 transition-all"
+        >
           <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-emerald-700">Finalizadas</span>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-2xl font-sans font-black text-emerald-950">{stats.finalizadasCount}</span>
@@ -575,7 +849,10 @@ export default function MemorandoView({
           </div>
         </div>
 
-        <div className="bg-red-50 border-2 border-[#141414] p-4 flex flex-col justify-between col-span-2 md:col-span-1 shadow-[4px_4px_0px_0px_#141414]/10">
+        <div 
+          onClick={() => { setLocalTab("list"); setFilterStatus("pendentes"); }}
+          className="bg-red-50 border-2 border-[#141414] p-3.5 flex flex-col justify-between shadow-[3px_3px_0px_0px_#141414]/10 cursor-pointer hover:border-red-600 transition-all"
+        >
           <span className="text-[9px] font-mono font-bold uppercase tracking-wider text-red-600">Pendentes</span>
           <div className="flex items-baseline gap-2 mt-2">
             <span className="text-2xl font-sans font-black text-red-950">{stats.pendentesCount}</span>
@@ -594,11 +871,11 @@ export default function MemorandoView({
             </div>
             <div>
               <h2 className="font-serif italic font-bold text-xl leading-tight text-[#141414]">Emissão e Controle de Memorandos</h2>
-              <p className="text-[10px] font-mono uppercase tracking-widest text-[#141414]/65 mt-0.5">Roteiro rápido de assinaturas, check-ins logísticos e fechamento administrativo com controle de anexo</p>
+              <p className="text-[10px] font-mono uppercase tracking-widest text-[#141414]/65 mt-0.5">Roteiro rápido de assinaturas, check-ins logísticos, férias de folga e fechamento administrativo</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 print:hidden">
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
             <button
               onClick={() => {
                 clearForm();
@@ -612,6 +889,28 @@ export default function MemorandoView({
             >
               Consultar Histórico
             </button>
+
+            <button
+              onClick={() => {
+                clearForm();
+                setLocalTab("relatorio_ferias");
+              }}
+              className={`flex items-center gap-1.5 px-4 py-2 text-xs font-mono font-bold uppercase border-2 transition-all cursor-pointer ${
+                localTab === "relatorio_ferias"
+                  ? "bg-blue-900 text-white border-blue-950 shadow-sm"
+                  : "bg-blue-50 text-blue-900 border-blue-600 hover:bg-blue-100"
+              }`}
+              title="Abrir Relatório de Data de Início de Férias e Acompanhamento das Solicitações de Folga"
+            >
+              <CalendarDays className="w-3.5 h-3.5" />
+              <span>Acompanhamento de Férias</span>
+              {statsRelatorioFerias.urgentes7d > 0 && (
+                <span className="px-1.5 py-0.2 bg-red-600 text-white rounded-full text-[9px] font-mono font-bold animate-pulse">
+                  {statsRelatorioFerias.urgentes7d}
+                </span>
+              )}
+            </button>
+
             {isAdmin && (
               <button
                 onClick={() => {
@@ -715,69 +1014,163 @@ export default function MemorandoView({
               </div>
             </div>
 
-            {/* DADOS ESPECÍFICOS DE FOLGA DE CAMPO */}
+            {/* DADOS ESPECÍFICOS DE FOLGA DE CAMPO & FÉRIAS */}
             {tipoMemorando === "Folga de campo" && (
-              <div className="md:col-span-12 p-5 bg-indigo-50/50 border-2 border-indigo-200 rounded-lg grid grid-cols-1 md:grid-cols-5 gap-4">
-                <div className="col-span-full border-b border-indigo-200 pb-1.5 flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4 text-indigo-700" />
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-indigo-800">
-                    Dados Adicionais do Roteiro de Folga de Campo
-                  </span>
+              <div className="md:col-span-12 p-5 bg-indigo-50/50 border-2 border-indigo-200 rounded-lg space-y-4">
+                <div className="border-b border-indigo-200 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="w-4 h-4 text-indigo-700" />
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-indigo-800">
+                      Roteiro de Folga de Campo & Programação de Férias
+                    </span>
+                  </div>
+                  {dataInicioFerias && (
+                    <div className="flex items-center gap-1.5">
+                      {(() => {
+                        const hojeStr = new Date().toISOString().split("T")[0];
+                        const d = diffDays(hojeStr, dataInicioFerias);
+                        if (d === 0) {
+                          return (
+                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-mono font-bold rounded border border-emerald-300">
+                              🎉 Início de Férias HOJE!
+                            </span>
+                          );
+                        } else if (d > 0 && d <= 7) {
+                          return (
+                            <span className="px-2 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-mono font-bold rounded border border-rose-300 animate-pulse">
+                              🚨 Faltam {d} dias para as férias ({formatBrDate(dataInicioFerias)})
+                            </span>
+                          );
+                        } else if (d > 7 && d <= 15) {
+                          return (
+                            <span className="px-2 py-0.5 bg-amber-100 text-amber-900 text-[10px] font-mono font-bold rounded border border-amber-300">
+                              ⏳ Faltam {d} dias para as férias ({formatBrDate(dataInicioFerias)})
+                            </span>
+                          );
+                        } else if (d > 15) {
+                          return (
+                            <span className="px-2 py-0.5 bg-blue-100 text-blue-900 text-[10px] font-mono font-bold rounded border border-blue-300">
+                              📅 Faltam {d} dias para as férias ({formatBrDate(dataInicioFerias)})
+                            </span>
+                          );
+                        } else {
+                          return (
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-mono font-medium rounded border border-slate-300">
+                              🏖️ Férias iniciadas há {Math.abs(d)} dias ({formatBrDate(dataInicioFerias)})
+                            </span>
+                          );
+                        }
+                      })()}
+                    </div>
+                  )}
                 </div>
                 
-                <div className="space-y-1">
-                  <label className="text-[9px] font-mono font-bold uppercase text-slate-600 block">Data de Saída</label>
-                  <input
-                    type="date"
-                    value={dataSaida}
-                    onChange={(e) => setDataSaida(e.target.value)}
-                    className="w-full border border-[#141414]/30 px-3 py-2 font-sans text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-mono font-bold uppercase text-slate-600 block">Data de Saída</label>
+                    <input
+                      type="date"
+                      value={dataSaida}
+                      onChange={(e) => setDataSaida(e.target.value)}
+                      className="w-full border border-[#141414]/30 px-3 py-2 font-sans text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-mono font-bold uppercase text-slate-600 block">Data de Retorno</label>
+                    <input
+                      type="date"
+                      value={dataRetorno}
+                      onChange={(e) => setDataRetorno(e.target.value)}
+                      className="w-full border border-[#141414]/30 px-3 py-2 font-sans text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-mono font-bold uppercase text-slate-600 block">Retorno ao Trabalho</label>
+                    <input
+                      type="date"
+                      value={retornoTrabalho}
+                      onChange={(e) => setRetornoTrabalho(e.target.value)}
+                      className="w-full border border-[#141414]/30 px-3 py-2 font-sans text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-mono font-bold uppercase text-slate-600 block">Destino</label>
+                    <input
+                      type="text"
+                      placeholder="Cidade / Sede"
+                      value={destino}
+                      onChange={(e) => setDestino(e.target.value)}
+                      className="w-full border border-[#141414]/30 px-3 py-2 font-sans text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-mono font-bold uppercase text-slate-600 block">Tipo Passagem</label>
+                    <select
+                      value={tipoPassagem}
+                      onChange={(e) => setTipoPassagem(e.target.value as any)}
+                      className="w-full border border-[#141414]/30 px-3 py-2 font-sans text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-slate-705 font-medium"
+                    >
+                      <option value="">Selecione...</option>
+                      <option value="Terrestre">🚌 Terrestre</option>
+                      <option value="Aérea">✈️ Aérea</option>
+                      <option value="Carro">🚗 Carro</option>
+                    </select>
+                  </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[9px] font-mono font-bold uppercase text-slate-600 block">Data de Retorno</label>
-                  <input
-                    type="date"
-                    value={dataRetorno}
-                    onChange={(e) => setDataRetorno(e.target.value)}
-                    className="w-full border border-[#141414]/30 px-3 py-2 font-sans text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                  />
-                </div>
+                {/* Bloco Dedicado de Férias da Folga de Campo */}
+                <div className="p-3.5 bg-blue-50/70 border border-blue-300 rounded-lg grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="md:col-span-2 space-y-1">
+                    <div className="flex flex-wrap items-center justify-between gap-1">
+                      <label className="text-[10px] font-mono font-bold uppercase text-blue-950 block">
+                        🏖️ Data de Início das Férias (Para Acompanhamento)
+                      </label>
+                      {selectedMatricula && ferias && ferias.some(f => f.matricula === selectedMatricula && f.feriasInicio) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const fColab = ferias.filter(f => f.matricula === selectedMatricula && f.feriasInicio).sort((a,b) => a.feriasInicio.localeCompare(b.feriasInicio));
+                            const fAlvo = fColab.find(f => f.feriasInicio >= new Date().toISOString().split("T")[0]) || fColab[0];
+                            if (fAlvo) setDataInicioFerias(fAlvo.feriasInicio);
+                          }}
+                          className="text-[9px] font-mono text-blue-700 underline hover:text-blue-950 font-bold cursor-pointer"
+                        >
+                          Usar data cadastrada no módulo de Férias
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="date"
+                      value={dataInicioFerias}
+                      onChange={(e) => setDataInicioFerias(e.target.value)}
+                      className="w-full border-2 border-blue-400 px-3 py-2 font-mono text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 font-bold text-blue-950 cursor-pointer"
+                    />
+                    <span className="text-[9px] text-blue-800 font-mono block mt-0.5">
+                      Data em que o colaborador entrará de férias. O sistema criará a contagem regressiva para acompanhar a solicitação.
+                    </span>
+                  </div>
 
-                <div className="space-y-1">
-                  <label className="text-[9px] font-mono font-bold uppercase text-slate-600 block">Retorno ao Trabalho</label>
-                  <input
-                    type="date"
-                    value={retornoTrabalho}
-                    onChange={(e) => setRetornoTrabalho(e.target.value)}
-                    className="w-full border border-[#141414]/30 px-3 py-2 font-sans text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[9px] font-mono font-bold uppercase text-slate-600 block">Destino</label>
-                  <input
-                    type="text"
-                    placeholder="Cidade / Sede"
-                    value={destino}
-                    onChange={(e) => setDestino(e.target.value)}
-                    className="w-full border border-[#141414]/30 px-3 py-2 font-sans text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[9px] font-mono font-bold uppercase text-slate-600 block">Tipo Passagem</label>
-                  <select
-                    value={tipoPassagem}
-                    onChange={(e) => setTipoPassagem(e.target.value as any)}
-                    className="w-full border border-[#141414]/30 px-3 py-2 font-sans text-xs bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-slate-705 font-medium"
-                  >
-                    <option value="">Selecione...</option>
-                    <option value="Terrestre">🚌 Terrestre</option>
-                    <option value="Aérea">✈️ Aérea</option>
-                    <option value="Carro">🚗 Carro</option>
-                  </select>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-mono font-bold uppercase text-blue-950 block">
+                      Duração das Férias (Dias)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      placeholder="Ex: 30"
+                      value={diasFerias}
+                      onChange={(e) => setDiasFerias(e.target.value)}
+                      className="w-full border-2 border-blue-400 px-3 py-2 font-mono text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-600 font-bold text-blue-950"
+                    />
+                    <span className="text-[9px] text-blue-800 font-mono block mt-0.5">
+                      Período de gozo em dias (ex: 15, 20, 30).
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
@@ -1217,6 +1610,54 @@ export default function MemorandoView({
                             <div className="col-span-2 mt-1 pt-1.5 border-t border-dashed border-indigo-100">
                               <span className="text-slate-400 font-sans font-semibold text-[10px] uppercase">Retorno Efetivo ao Trabalho:</span>{" "}
                               <span className="font-bold text-indigo-900">{formatBrDate(m.retornoTrabalho)}</span>
+                            </div>
+                          )}
+
+                          {/* Data de Início das Férias e Dias Restantes */}
+                          {(m.dataInicioFerias || m.diasFerias) && (
+                            <div className="col-span-2 mt-2 pt-2 border-t border-blue-200/60 bg-blue-50/80 p-2.5 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 border border-blue-200">
+                              <div>
+                                <span className="text-blue-900 font-sans font-bold text-[10px] uppercase flex items-center gap-1.5">
+                                  <span>🏖️ Início das Férias:</span>
+                                  <strong className="text-blue-950 font-mono text-xs">{m.dataInicioFerias ? formatBrDate(m.dataInicioFerias) : "Não informada"}</strong>
+                                  {m.diasFerias && <span className="text-blue-700 font-normal">({m.diasFerias} dias)</span>}
+                                </span>
+                              </div>
+                              {m.dataInicioFerias && (() => {
+                                const hojeStr = new Date().toISOString().split("T")[0];
+                                const d = diffDays(hojeStr, m.dataInicioFerias);
+                                if (d === 0) {
+                                  return (
+                                    <span className="px-2 py-0.5 bg-emerald-600 text-white font-mono font-bold text-[9px] rounded uppercase shadow-xs">
+                                      Inicia Hoje!
+                                    </span>
+                                  );
+                                } else if (d > 0 && d <= 7) {
+                                  return (
+                                    <span className="px-2 py-0.5 bg-rose-600 text-white font-mono font-bold text-[9px] rounded uppercase animate-pulse shadow-xs">
+                                      🚨 Faltam {d} dias
+                                    </span>
+                                  );
+                                } else if (d > 7 && d <= 15) {
+                                  return (
+                                    <span className="px-2 py-0.5 bg-amber-500 text-white font-mono font-bold text-[9px] rounded uppercase shadow-xs">
+                                      ⏳ Faltam {d} dias
+                                    </span>
+                                  );
+                                } else if (d > 15) {
+                                  return (
+                                    <span className="px-2 py-0.5 bg-blue-600 text-white font-mono font-bold text-[9px] rounded uppercase shadow-xs">
+                                      📅 Faltam {d} dias
+                                    </span>
+                                  );
+                                } else {
+                                  return (
+                                    <span className="px-2 py-0.5 bg-slate-200 text-slate-700 font-mono font-bold text-[9px] rounded uppercase">
+                                      Iniciada há {Math.abs(d)} dias
+                                    </span>
+                                  );
+                                }
+                              })()}
                             </div>
                           )}
                         </div>

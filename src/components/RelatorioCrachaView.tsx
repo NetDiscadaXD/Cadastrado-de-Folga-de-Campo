@@ -507,14 +507,14 @@ export default function RelatorioCrachaView({
         </div>
 
         {/* Tabela de Dados */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[580px] custom-scrollbar border-t border-[#141414]/15">
           {filteredEmployees.length === 0 ? (
             <div className="p-12 text-center text-xs font-mono text-neutral-400 uppercase">
               [ NENHUM COLABORADOR ENCONTRADO PARA OS FILTROS SELECIONADOS ]
             </div>
           ) : (
             <table className="w-full text-left text-xs font-mono border-collapse min-w-[1050px]">
-              <thead>
+              <thead className="sticky top-0 z-10 shadow-xs bg-neutral-100">
                 <tr className="bg-neutral-100 text-[#141414] border-b border-[#141414] text-[9px] uppercase tracking-wider font-bold">
                   <th className="px-4 py-3 bg-neutral-150">Mat. Px</th>
                   <th className="px-4 py-3 bg-neutral-155 border-l border-[#141414]/15 min-w-[140px]">Mat. Aura</th>

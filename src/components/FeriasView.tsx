@@ -37,6 +37,9 @@ function entradaDe(f: Ferias): EntradaRateioFerias {
     paFim: f.paFim,
     feriasInicio: f.feriasInicio,
     feriasFim: f.feriasFim,
+    tipoLancamento: f.tipoLancamento || 'nova',
+    creditoFerias: f.creditoFerias,
+    projetoDevido: f.projetoDevido || (f.tipoLancamento === 'credito' ? f.projetoOrigem : undefined),
     diasAbono: f.diasAbono,
     salarioBase: f.salarioBase,
     encargosPct: f.encargosPct,
@@ -57,8 +60,11 @@ export default function FeriasView({ colaboradores, ferias, onSaveFerias, onDele
   const [anoFiltro, setAnoFiltro] = useState<string>("todos");
 
   // Campos do formulário
+  const [tipoLancamento, setTipoLancamento] = useState<"nova" | "credito">("nova");
   const [matricula, setMatricula] = useState("");
   const [paInicio, setPaInicio] = useState("");
+  const [creditoFerias, setCreditoFerias] = useState("30");
+  const [projetoDevido, setProjetoDevido] = useState("");
   const [feriasInicio, setFeriasInicio] = useState("");
   const [feriasFim, setFeriasFim] = useState("");
   const [diasAbono, setDiasAbono] = useState("0");
@@ -91,29 +97,35 @@ export default function FeriasView({ colaboradores, ferias, onSaveFerias, onDele
     paFim,
     feriasInicio,
     feriasFim,
+    tipoLancamento,
+    creditoFerias: toNumber(creditoFerias) > 0 ? toNumber(creditoFerias) : 30,
+    projetoDevido: tipoLancamento === "credito" ? projetoDevido : undefined,
     diasAbono: toNumber(diasAbono),
     salarioBase: toNumber(salario),
     encargosPct: toNumber(encargos),
     incluirTerco,
-    projetoOrigem,
+    projetoOrigem: tipoLancamento === "credito" && projetoDevido.trim() ? projetoDevido.trim() : projetoOrigem,
     projetoAtual,
     dataInicioCanteiro: dataCanteiro,
   };
   const previa = useMemo(
     () => calcularRateioFerias(entradaForm),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [paInicio, paFim, feriasInicio, feriasFim, diasAbono, salario, encargos, incluirTerco, projetoOrigem, projetoAtual, dataCanteiro]
+    [paInicio, paFim, feriasInicio, feriasFim, tipoLancamento, creditoFerias, projetoDevido, diasAbono, salario, encargos, incluirTerco, projetoOrigem, projetoAtual, dataCanteiro]
   );
   const avisos = useMemo(
     () => validarFerias(entradaForm),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [paInicio, paFim, feriasInicio, feriasFim, diasAbono, salario, encargos, incluirTerco, projetoOrigem, projetoAtual, dataCanteiro]
+    [paInicio, paFim, feriasInicio, feriasFim, tipoLancamento, creditoFerias, projetoDevido, diasAbono, salario, encargos, incluirTerco, projetoOrigem, projetoAtual, dataCanteiro]
   );
 
   const limparFormulario = () => {
     setEditingId(null);
+    setTipoLancamento("nova");
     setMatricula("");
     setPaInicio("");
+    setCreditoFerias("30");
+    setProjetoDevido("");
     setFeriasInicio("");
     setFeriasFim("");
     setDiasAbono("0");
@@ -135,8 +147,11 @@ export default function FeriasView({ colaboradores, ferias, onSaveFerias, onDele
 
   const abrirEdicao = (f: Ferias) => {
     setEditingId(f.id);
+    setTipoLancamento(f.tipoLancamento || (f.projetoDevido ? "credito" : "nova"));
     setMatricula(f.matricula);
     setPaInicio(f.paInicio);
+    setCreditoFerias(String(f.creditoFerias ?? 30));
+    setProjetoDevido(f.projetoDevido || (f.tipoLancamento === "credito" ? f.projetoOrigem : ""));
     setFeriasInicio(f.feriasInicio);
     setFeriasFim(f.feriasFim);
     setDiasAbono(String(f.diasAbono));
@@ -152,7 +167,7 @@ export default function FeriasView({ colaboradores, ferias, onSaveFerias, onDele
     setIsFormOpen(true);
   };
 
-  // Ao escolher o colaborador, preenche projetos, início no canteiro, salário e o próximo PA sem férias.
+  // Ao escolher o colaborador, preenche projetos, início no canteiro, salário, próximo PA e créditos acumulados
   const aoSelecionarColaborador = (mat: string) => {
     setMatricula(mat);
     const c = colMap[mat];
@@ -163,6 +178,14 @@ export default function FeriasView({ colaboradores, ferias, onSaveFerias, onDele
     setSalario(c.salarioBase ? String(c.salarioBase) : "");
     const usados = ferias.filter((f) => f.matricula === mat).map((f) => f.paInicio);
     setPaInicio(sugerirPeriodoAquisitivo(c.dataAdmissao, usados).paInicio);
+
+    // Se o colaborador tem saldo acumulado de crédito de férias, já sugere:
+    if (c.creditoFeriasAcumulado !== undefined && c.creditoFeriasAcumulado > 0) {
+      setCreditoFerias(String(c.creditoFeriasAcumulado));
+    }
+    if (c.projetoDevidoCredito) {
+      setProjetoDevido(c.projetoDevidoCredito);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -176,6 +199,10 @@ export default function FeriasView({ colaboradores, ferias, onSaveFerias, onDele
     if (!dataCanteiro) return setErrorMsg("Informe a data de início no canteiro.");
     if (toNumber(salario) <= 0) return setErrorMsg("Informe o valor bruto (já com encargos) para calcular o custo.");
 
+    if (tipoLancamento === "credito" && !projetoDevido.trim()) {
+      return setErrorMsg("Ao selecionar 'Utilizar Crédito de Férias', informe o projeto que é devido desse crédito.");
+    }
+
     const payload: Ferias = {
       id: editingId || "FER-" + Date.now(),
       matricula,
@@ -183,11 +210,15 @@ export default function FeriasView({ colaboradores, ferias, onSaveFerias, onDele
       paFim,
       feriasInicio,
       feriasFim,
+      tipoLancamento,
+      creditoFerias: Math.max(1, Math.round(toNumber(creditoFerias) || 30)),
+      projetoDevido: tipoLancamento === "credito" ? projetoDevido.trim() : undefined,
+      saldoRestante: previa.saldoRestante,
       diasAbono: Math.max(0, Math.round(toNumber(diasAbono))),
       salarioBase: toNumber(salario),
       encargosPct: toNumber(encargos),
       incluirTerco,
-      projetoOrigem: projetoOrigem.trim(),
+      projetoOrigem: tipoLancamento === "credito" && projetoDevido.trim() ? projetoDevido.trim() : projetoOrigem.trim(),
       projetoAtual: projetoAtual.trim(),
       dataInicioCanteiro: dataCanteiro,
       observacao: observacao.trim() || undefined,
@@ -261,11 +292,16 @@ export default function FeriasView({ colaboradores, ferias, onSaveFerias, onDele
       filtrados.map(({ f, r, col }) => ({
         Matrícula: f.matricula,
         Nome: col?.nomeCompleto || "",
+        "Tipo de Lançamento": f.tipoLancamento === "credito" ? "Utilização de Crédito de Férias" : "Nova Férias",
+        "Projeto Devedor do Crédito": f.tipoLancamento === "credito" ? (f.projetoDevido || f.projetoOrigem || "-") : "-",
         "Período Aquisitivo": `${formatBrDate(f.paInicio)} a ${formatBrDate(f.paFim)}`,
+        "Crédito de Férias (Dias)": r.creditoFerias,
         "Início Férias": formatBrDate(f.feriasInicio),
         "Fim Férias": formatBrDate(f.feriasFim),
         "Dias de Gozo": r.diasGozo,
         "Dias de Abono": f.diasAbono,
+        "Total de Dias Utilizados": r.diasUtilizados,
+        "Saldo Restante de Férias": r.saldoRestante,
         "Valor Bruto Mensal (R$)": r.valorBrutoMensal,
         "1/3 Constitucional (R$)": r.tercoConstitucional,
         "Encargos Extras (R$)": r.encargos,
@@ -359,59 +395,247 @@ export default function FeriasView({ colaboradores, ferias, onSaveFerias, onDele
                 <option value="">Selecione...</option>
                 {colaboradoresOrdenados.map((c) => (
                   <option key={c.matricula} value={c.matricula}>
-                    {c.matricula} - {c.nomeCompleto}
+                    {c.matricula} - {c.nomeCompleto} {c.creditoFeriasAcumulado ? `(Crédito: ${c.creditoFeriasAcumulado}d)` : ""}
                   </option>
                 ))}
               </select>
             </div>
 
-            <div>
-              <label className={labelCls}>Início do Período Aquisitivo*</label>
-              <input type="date" value={paInicio} onChange={(e) => setPaInicio(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls}>Fim do Período Aquisitivo</label>
-              <input type="date" value={paFim} readOnly className={inputCls + " bg-neutral-100"} />
-            </div>
-            <div>
-              <label className={labelCls}>Início no Canteiro Atual*</label>
-              <input type="date" value={dataCanteiro} onChange={(e) => setDataCanteiro(e.target.value)} className={inputCls} />
+            {/* Pergunta: Nova Férias ou Utilizar Crédito de Férias? */}
+            <div className="md:col-span-3 p-3.5 border-2 border-[#141414] bg-neutral-50 space-y-2">
+              <label className="block text-[11px] font-mono font-bold uppercase text-[#141414]">
+                Qual é o tipo deste lançamento de férias?*
+              </label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div
+                  onClick={() => setTipoLancamento("nova")}
+                  className={`flex items-start gap-3 p-3 border cursor-pointer transition-all ${
+                    tipoLancamento === "nova"
+                      ? "border-emerald-700 bg-emerald-50 ring-2 ring-emerald-600 shadow-xs"
+                      : "border-slate-300 bg-white hover:border-slate-400"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="tipoLancamento"
+                    value="nova"
+                    checked={tipoLancamento === "nova"}
+                    onChange={() => setTipoLancamento("nova")}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <div className="font-bold text-xs uppercase font-mono text-emerald-950 flex items-center gap-1.5">
+                      <span>🏖️ Nova Férias</span>
+                      {tipoLancamento === "nova" && (
+                        <span className="text-[9px] bg-emerald-200 text-emerald-900 px-1 py-0.2 rounded font-bold">
+                          Selecionado
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-600 font-sans mt-0.5">
+                      Lançamento padrão de um novo período aquisitivo do colaborador no projeto atual.
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => {
+                    setTipoLancamento("credito");
+                    if (matricula && colMap[matricula]) {
+                      const c = colMap[matricula];
+                      if (c.creditoFeriasAcumulado && c.creditoFeriasAcumulado > 0) {
+                        setCreditoFerias(String(c.creditoFeriasAcumulado));
+                      }
+                      if (c.projetoDevidoCredito) {
+                        setProjetoDevido(c.projetoDevidoCredito);
+                      }
+                    }
+                  }}
+                  className={`flex items-start gap-3 p-3 border cursor-pointer transition-all ${
+                    tipoLancamento === "credito"
+                      ? "border-blue-700 bg-blue-50 ring-2 ring-blue-600 shadow-xs"
+                      : "border-slate-300 bg-white hover:border-slate-400"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="tipoLancamento"
+                    value="credito"
+                    checked={tipoLancamento === "credito"}
+                    onChange={() => setTipoLancamento("credito")}
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <div className="font-bold text-xs uppercase font-mono text-blue-950 flex items-center gap-1.5">
+                      <span>🎟️ Utilizar Crédito de Férias</span>
+                      {tipoLancamento === "credito" && (
+                        <span className="text-[9px] bg-blue-200 text-blue-900 px-1 py-0.2 rounded font-bold">
+                          Selecionado
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-600 font-sans mt-0.5">
+                      Abater do saldo de crédito de férias acumulado e debitar o custo do projeto que é devido desse crédito.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Informações se o colaborador possui saldo acumulado cadastrado */}
+              {matricula && colMap[matricula] && (colMap[matricula].creditoFeriasAcumulado !== undefined || colMap[matricula].projetoDevidoCredito) && (
+                <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-mono text-blue-950">
+                  <span className="px-2 py-0.5 bg-blue-100 border border-blue-300 rounded font-bold">
+                    Saldo Cadastrado na Ficha: {colMap[matricula]?.creditoFeriasAcumulado ?? 0} dias
+                  </span>
+                  {colMap[matricula]?.projetoDevidoCredito && (
+                    <span className="text-slate-600">
+                      • Projeto Devido Cadastrado: <b>{colMap[matricula]?.projetoDevidoCredito}</b>
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div>
-              <label className={labelCls}>Início das Férias*</label>
-              <input type="date" value={feriasInicio} onChange={(e) => setFeriasInicio(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls}>Fim das Férias*</label>
-              <input type="date" value={feriasFim} onChange={(e) => setFeriasFim(e.target.value)} className={inputCls} />
-            </div>
-            <div>
-              <label className={labelCls}>Dias de Abono (vendidos)</label>
-              <input
-                type="number"
-                min={0}
-                max={10}
-                value={diasAbono}
-                onChange={(e) => setDiasAbono(e.target.value)}
-                className={inputCls}
-              />
-            </div>
+            {/* Campos Específicos para Utilizar Crédito de Férias */}
+            {tipoLancamento === "credito" ? (
+              <>
+                <div className="md:col-span-1">
+                  <label className={labelCls}>Crédito de Férias a Utilizar (Saldo em Dias)*</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={creditoFerias}
+                    onChange={(e) => setCreditoFerias(e.target.value)}
+                    placeholder="30"
+                    className={inputCls + " font-bold bg-blue-50/60 border-blue-600 text-blue-950"}
+                  />
+                  <span className="text-[9px] text-blue-900 font-mono block mt-1">
+                    Saldo de dias disponível para retirada.
+                  </span>
+                </div>
 
-            <div>
-              <label className={labelCls}>Projeto de Origem</label>
-              <input
-                type="text"
-                value={projetoOrigem}
-                onChange={(e) => setProjetoOrigem(e.target.value)}
-                placeholder="Vazio = sem rateio"
-                className={inputCls}
-              />
-            </div>
-            <div>
-              <label className={labelCls}>Projeto Atual*</label>
-              <input type="text" value={projetoAtual} onChange={(e) => setProjetoAtual(e.target.value)} className={inputCls} />
-            </div>
+                <div className="md:col-span-2">
+                  <label className={labelCls}>Projeto que é Devido desse Crédito de Férias*</label>
+                  <input
+                    type="text"
+                    required={tipoLancamento === "credito"}
+                    value={projetoDevido}
+                    onChange={(e) => setProjetoDevido(e.target.value)}
+                    placeholder="Ex: Projeto Salobo / Obra Anterior / Canteiro Borborema"
+                    className={inputCls + " font-bold bg-blue-50/60 border-blue-600 text-blue-950"}
+                  />
+                  <span className="text-[9px] text-blue-900 font-mono block mt-1">
+                    Projeto responsável pelo custo/débito deste crédito de férias utilizado.
+                  </span>
+                </div>
+
+                <div>
+                  <label className={labelCls}>Início das Férias*</label>
+                  <input type="date" value={feriasInicio} onChange={(e) => setFeriasInicio(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Fim das Férias*</label>
+                  <input type="date" value={feriasFim} onChange={(e) => setFeriasFim(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Dias de Abono (vendidos)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10}
+                    value={diasAbono}
+                    onChange={(e) => setDiasAbono(e.target.value)}
+                    className={inputCls}
+                  />
+                  <span className="text-[9px] text-[#141414]/70 font-mono block mt-1 uppercase">
+                    Máx. 10 dias de abono pecuniário
+                  </span>
+                </div>
+
+                <div>
+                  <label className={labelCls}>Projeto Atual*</label>
+                  <input type="text" value={projetoAtual} onChange={(e) => setProjetoAtual(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Início no Canteiro Atual*</label>
+                  <input type="date" value={dataCanteiro} onChange={(e) => setDataCanteiro(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Início do Período Aquisitivo*</label>
+                  <input type="date" value={paInicio} onChange={(e) => setPaInicio(e.target.value)} className={inputCls} />
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Campos Padrão para Nova Férias */}
+                <div>
+                  <label className={labelCls}>Início do Período Aquisitivo*</label>
+                  <input type="date" value={paInicio} onChange={(e) => setPaInicio(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Fim do Período Aquisitivo</label>
+                  <input type="date" value={paFim} readOnly className={inputCls + " bg-neutral-100"} />
+                </div>
+                <div>
+                  <label className={labelCls}>Início no Canteiro Atual*</label>
+                  <input type="date" value={dataCanteiro} onChange={(e) => setDataCanteiro(e.target.value)} className={inputCls} />
+                </div>
+
+                <div>
+                  <label className={labelCls}>Crédito de Férias (Saldo a Retirar)*</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={creditoFerias}
+                    onChange={(e) => setCreditoFerias(e.target.value)}
+                    placeholder="30"
+                    className={inputCls + " font-bold bg-blue-50/50 border-blue-600 text-blue-950"}
+                  />
+                  <span className="text-[9px] text-[#141414]/70 font-mono block mt-1 uppercase">
+                    Saldo total de férias que a pessoa tinha para retirar (padrão 30d)
+                  </span>
+                </div>
+                <div>
+                  <label className={labelCls}>Início das Férias*</label>
+                  <input type="date" value={feriasInicio} onChange={(e) => setFeriasInicio(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Fim das Férias*</label>
+                  <input type="date" value={feriasFim} onChange={(e) => setFeriasFim(e.target.value)} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>Dias de Abono (vendidos)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={10}
+                    value={diasAbono}
+                    onChange={(e) => setDiasAbono(e.target.value)}
+                    className={inputCls}
+                  />
+                  <span className="text-[9px] text-[#141414]/70 font-mono block mt-1 uppercase">
+                    Máx. 10 dias de abono pecuniário
+                  </span>
+                </div>
+
+                <div>
+                  <label className={labelCls}>Projeto de Origem</label>
+                  <input
+                    type="text"
+                    value={projetoOrigem}
+                    onChange={(e) => setProjetoOrigem(e.target.value)}
+                    placeholder="Vazio = sem rateio"
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Projeto Atual*</label>
+                  <input type="text" value={projetoAtual} onChange={(e) => setProjetoAtual(e.target.value)} className={inputCls} />
+                </div>
+              </>
+            )}
             <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-4 p-3 border border-[#141414] bg-white">
               <div>
                 <label className={labelCls}>Valor Bruto Mensal (R$)*</label>
@@ -471,22 +695,45 @@ export default function FeriasView({ colaboradores, ferias, onSaveFerias, onDele
                 <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {a}
               </div>
             ))}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px] font-mono">
-              <div>
-                <span className="block text-[#141414]/60 uppercase">Dias de gozo</span>
-                <b>{previa.diasGozo} dias</b>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-[11px] font-mono">
+              <div className="bg-white p-2.5 border border-blue-200">
+                <span className="block text-blue-900 font-bold uppercase text-[10px]">Crédito de Férias</span>
+                <b className="text-base text-blue-950 font-black">{previa.creditoFerias} dias</b>
+                <span className="text-[9px] text-slate-500 block">Saldo inicial a retirar</span>
               </div>
-              <div>
-                <span className="block text-[#141414]/60 uppercase">Dias do PA</span>
-                <b>{previa.diasPA} dias</b>
+              <div className="bg-white p-2.5 border border-[#141414]/15">
+                <span className="block text-[#141414]/70 uppercase text-[10px]">Dias Utilizados</span>
+                <b className="text-base text-slate-900 font-black">{previa.diasUtilizados} dias</b>
+                <span className="text-[9px] text-slate-500 block">{previa.diasGozo} gozo + {previa.diasUtilizados - previa.diasGozo} abono</span>
               </div>
-              <div>
-                <span className="block text-[#141414]/60 uppercase">Valor Bruto Mensal</span>
-                <b>{formatCurrency(previa.valorBrutoMensal)}</b>
+              <div className={`p-2.5 border ${
+                previa.saldoRestante < 0 
+                  ? 'bg-red-50 border-red-300' 
+                  : previa.saldoRestante === 0 
+                    ? 'bg-neutral-50 border-neutral-300' 
+                    : 'bg-emerald-50 border-emerald-300'
+              }`}>
+                <span className={`block uppercase text-[10px] font-bold ${
+                  previa.saldoRestante < 0 ? 'text-red-800' : 'text-emerald-800'
+                }`}>
+                  Saldo Restante
+                </span>
+                <b className={`text-base font-black ${
+                  previa.saldoRestante < 0 ? 'text-red-900' : 'text-emerald-950'
+                }`}>
+                  {previa.saldoRestante} dias
+                </b>
+                <span className="text-[9px] text-slate-500 block">Para futuras saídas</span>
               </div>
-              <div>
-                <span className="block text-[#141414]/60 uppercase">Custo Total Férias</span>
-                <b className="text-emerald-800 font-bold text-xs">{formatCurrency(previa.custoTotal)}</b>
+              <div className="bg-white p-2.5 border border-[#141414]/15">
+                <span className="block text-[#141414]/70 uppercase text-[10px]">Dias do PA</span>
+                <b className="text-base text-slate-900 font-black">{previa.diasPA} dias</b>
+                <span className="text-[9px] text-slate-500 block">{formatCurrency(previa.valorBrutoMensal)} bruto</span>
+              </div>
+              <div className="bg-emerald-50/70 p-2.5 border border-emerald-300">
+                <span className="block text-emerald-900 font-bold uppercase text-[10px]">Custo Total Férias</span>
+                <b className="text-base text-emerald-900 font-black">{formatCurrency(previa.custoTotal)}</b>
+                <span className="text-[9px] text-emerald-700 block">Gozo + 1/3 + extras</span>
               </div>
             </div>
             <div className="flex flex-wrap gap-4 text-[10px] font-mono text-[#141414]/75 border-t border-[#141414]/15 pt-2">
@@ -623,13 +870,13 @@ export default function FeriasView({ colaboradores, ferias, onSaveFerias, onDele
             <Download className="w-3.5 h-3.5" /> Excel
           </button>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[500px] custom-scrollbar">
           <table className="w-full text-xs font-mono">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-[#E4E3E0] shadow-xs">
               <tr className="bg-[#E4E3E0] text-left uppercase text-[10px]">
                 <th className="px-4 py-2">Colaborador</th>
                 <th className="px-4 py-2">Período Aquisitivo</th>
-                <th className="px-4 py-2">Férias</th>
+                <th className="px-4 py-2">Férias & Crédito</th>
                 <th className="px-4 py-2">Origem</th>
                 <th className="px-4 py-2">Atual</th>
                 <th className="px-4 py-2 text-right">Total</th>
@@ -652,6 +899,13 @@ export default function FeriasView({ colaboradores, ferias, onSaveFerias, onDele
                     <span className="block text-[10px] text-[#141414]/80 font-bold">
                       Bruto: {formatCurrency(f.salarioBase)}
                     </span>
+                    <span className={`inline-block mt-1 px-1.5 py-0.5 rounded text-[8px] font-mono font-bold uppercase border ${
+                      f.tipoLancamento === 'credito'
+                        ? 'bg-blue-100 text-blue-900 border-blue-300'
+                        : 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                    }`}>
+                      {f.tipoLancamento === 'credito' ? '🎟️ Crédito Utilizado' : '🏖️ Nova Férias'}
+                    </span>
                   </td>
                   <td className="px-4 py-2">
                     {formatBrDate(f.paInicio)} a {formatBrDate(f.paFim)}
@@ -660,16 +914,39 @@ export default function FeriasView({ colaboradores, ferias, onSaveFerias, onDele
                     </span>
                   </td>
                   <td className="px-4 py-2">
-                    {formatBrDate(f.feriasInicio)} a {formatBrDate(f.feriasFim)}
-                    <span className="block text-[10px] text-[#141414]/60">
-                      {r.diasGozo} dias{f.diasAbono > 0 ? ` + ${f.diasAbono} de abono` : ""}
+                    <div className="font-bold text-slate-900">
+                      {formatBrDate(f.feriasInicio)} a {formatBrDate(f.feriasFim)}
+                    </div>
+                    <span className="block text-[10px] text-[#141414]/70">
+                      {r.diasGozo}d gozo{f.diasAbono > 0 ? ` + ${f.diasAbono}d abono` : ""} ({r.diasUtilizados}d utilizados)
                     </span>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-blue-50 text-blue-900 border border-blue-200">
+                        Crédito: {r.creditoFerias}d
+                      </span>
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border ${
+                        r.saldoRestante < 0 
+                          ? 'bg-red-50 text-red-800 border-red-300' 
+                          : r.saldoRestante === 0 
+                            ? 'bg-neutral-100 text-neutral-800 border-neutral-300' 
+                            : 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                      }`}>
+                        Saldo Restante: {r.saldoRestante}d
+                      </span>
+                    </div>
                   </td>
                   <td className="px-4 py-2">
                     {r.rateado ? (
                       <>
-                        {f.projetoOrigem}
-                        <span className="block font-bold">{formatCurrency(r.custoOrigem)}</span>
+                        <div className="flex items-center gap-1 font-bold text-slate-900">
+                          <span>{f.projetoOrigem}</span>
+                          {f.tipoLancamento === 'credito' && (
+                            <span className="text-[8px] font-mono bg-blue-100 text-blue-800 px-1 py-0.2 rounded border border-blue-200 font-bold">
+                              Devedor
+                            </span>
+                          )}
+                        </div>
+                        <span className="block font-bold text-emerald-900">{formatCurrency(r.custoOrigem)}</span>
                         <span className="block text-[10px] text-[#141414]/60">
                           {fmtPct(r.pctOrigem)} - {r.diasOrigem} dias
                         </span>
